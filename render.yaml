@@ -1,0 +1,15 @@
+# Render Blueprint — 連結此 repo 後 Render 會自動依此設定建立服務
+# 文件: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: colorwar
+    runtime: node
+    plan: free
+    # 安裝相依套件並打包前端到 dist/client
+    buildCommand: npm install && npm run build
+    # 啟動權威伺服器（同時供應前端靜態檔與 WebSocket）
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
