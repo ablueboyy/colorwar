@@ -1,6 +1,6 @@
 import type { GameState, PlayerId, TowerType, ServerMessage } from '../shared/types';
 import { TOWER_CONFIGS } from '../shared/config';
-import { WsClient } from './wsClient';
+import { WsClient, type ConnStatus } from './wsClient';
 import { Renderer, CELL_SIZE, CANVAS_W, CANVAS_H } from './renderer';
 
 // ── DOM ─────────────────────────────────────────────────────────────────────
@@ -13,6 +13,7 @@ const createBtn = document.getElementById('create-btn') as HTMLButtonElement;
 const joinBtn = document.getElementById('join-btn') as HTMLButtonElement;
 const codeInput = document.getElementById('code-input') as HTMLInputElement;
 const lobbyError = document.getElementById('lobby-error')!;
+const connStatus = document.getElementById('conn-status')!;
 
 const roomCodeEl = document.getElementById('room-code-display')!;
 const waitStatus = document.getElementById('wait-status')!;
@@ -249,7 +250,28 @@ function loop(): void {
   requestAnimationFrame(loop);
 }
 
+// ── Connection status ─────────────────────────────────────────────────────────
+function setLobbyEnabled(enabled: boolean): void {
+  createBtn.disabled = !enabled;
+  joinBtn.disabled = !enabled;
+}
+
+ws.onStatus((status: ConnStatus) => {
+  connStatus.className = status;
+  if (status === 'connecting') {
+    connStatus.textContent = '連線中…（伺服器休眠時需等約 30 秒喚醒）';
+    setLobbyEnabled(false);
+  } else if (status === 'open') {
+    connStatus.textContent = '● 已連線';
+    setLobbyEnabled(true);
+  } else {
+    connStatus.textContent = '連線中斷，自動重新連線中…';
+    setLobbyEnabled(false);
+  }
+});
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 showScreen('lobby');
+setLobbyEnabled(false);
 ws.connect();
 requestAnimationFrame(loop);

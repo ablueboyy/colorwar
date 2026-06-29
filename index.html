@@ -64,6 +64,10 @@
     }
     .lobby-card input:focus { outline: 2px solid #3b82f6; }
     #lobby-error { color: #f87171; font-size: 0.85rem; min-height: 1.2em; }
+    #conn-status { font-size: 0.78rem; min-height: 1.1em; letter-spacing: 1px; }
+    #conn-status.connecting { color: #fbbf24; }
+    #conn-status.open { color: #4ade80; }
+    #conn-status.closed { color: #f87171; }
 
     /* ── Waiting ── */
     #waiting {
@@ -236,6 +240,7 @@
       <input id="code-input" type="text" maxlength="4" placeholder="CODE" />
       <button id="join-btn" class="btn">Join Room</button>
       <div id="lobby-error"></div>
+      <div id="conn-status"></div>
     </div>
   </div>
 
