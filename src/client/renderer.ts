@@ -1,5 +1,5 @@
-import type { GameState, PlayerId, TowerType } from '../shared/types';
-import { BOARD_WIDTH, BOARD_HEIGHT } from '../shared/config';
+import type { GameState, PlayerId, Tower, TowerType } from '../shared/types';
+import { BOARD_WIDTH, BOARD_HEIGHT, TOWER_CONFIGS, LEVEL_MULTS } from '../shared/config';
 
 export const CELL_SIZE = 30;
 export const CANVAS_W = BOARD_WIDTH * CELL_SIZE;
@@ -34,15 +34,60 @@ export class Renderer {
     myId: PlayerId | null,
     selectedTower: TowerType | null,
     hovered: { x: number; y: number } | null,
+    selectedTowerId: string | null,
   ): void {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
     this.drawBoard(state, myId, selectedTower, hovered);
-    this.drawTowers(state, myId);
+    this.drawRangeCircles(state, selectedTowerId, hovered);
+    this.drawTowers(state, myId, selectedTowerId);
     this.drawProjectiles(state);
 
     if (state.phase === 'ended') this.drawEndOverlay(state);
+  }
+
+  private drawRangeCircles(
+    state: GameState,
+    selectedTowerId: string | null,
+    hovered: { x: number; y: number } | null,
+  ): void {
+    if (selectedTowerId) {
+      const t = state.towers.find(t => t.id === selectedTowerId);
+      if (t) this.drawRangeCircle(t);
+    }
+    if (hovered) {
+      const t = state.towers.find(t => t.x === hovered.x && t.y === hovered.y);
+      if (t && t.id !== selectedTowerId && (t.type === 'support' || t.type === 'repair')) {
+        this.drawRangeCircle(t);
+      }
+    }
+  }
+
+  private drawRangeCircle(tower: Tower): void {
+    const ctx = this.ctx;
+    const S = CELL_SIZE;
+    const cfg = TOWER_CONFIGS[tower.type];
+    const m = LEVEL_MULTS[tower.level - 1] ?? LEVEL_MULTS[0];
+    const baseRange = Math.max(cfg.range, cfg.supportRange, cfg.healRange);
+    const effRange = baseRange * m.range;
+    if (effRange <= 0) return;
+
+    const cx = (tower.x + 0.5) * S;
+    const cy = (tower.y + 0.5) * S;
+    const p1 = tower.owner === 'p1';
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, effRange * S, 0, Math.PI * 2);
+    ctx.fillStyle = p1 ? 'rgba(59,130,246,0.07)' : 'rgba(239,68,68,0.07)';
+    ctx.fill();
+    ctx.strokeStyle = p1 ? 'rgba(147,197,253,0.45)' : 'rgba(252,165,165,0.45)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
   }
 
   private drawBoard(
@@ -80,7 +125,7 @@ export class Renderer {
     }
   }
 
-  private drawTowers(state: GameState, myId: PlayerId | null): void {
+  private drawTowers(state: GameState, myId: PlayerId | null, selectedTowerId: string | null): void {
     const ctx = this.ctx;
     const S = CELL_SIZE;
 
@@ -90,6 +135,7 @@ export class Renderer {
       const active = tower.active;
       const isOwn = tower.owner === myId;
       const p1 = tower.owner === 'p1';
+      const isSelected = tower.id === selectedTowerId;
 
       const dark = !active ? '#2d3748' : p1 ? '#1e3a8a' : '#7f1d1d';
       const mid  = !active ? '#4a5568' : p1 ? '#2563eb' : '#dc2626';
@@ -99,6 +145,19 @@ export class Renderer {
       ctx.translate(px, py);
       this.drawTowerSprite(ctx, tower.type, S, dark, mid, lite);
 
+      // Selection outline
+      if (isSelected) {
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(1, 1, S - 2, S - 2);
+      }
+
+      // Level pips (L2 = 1 pip, L3 = 2 pips)
+      for (let i = 0; i < tower.level - 1; i++) {
+        ctx.fillStyle = '#facc15';
+        ctx.fillRect(3 + i * 5, 2, 4, 4);
+      }
+
       // HP bar
       const hp = tower.hp / tower.maxHp;
       const bw = S - 6;
@@ -107,8 +166,8 @@ export class Renderer {
       ctx.fillStyle = hp > 0.6 ? '#22c55e' : hp > 0.3 ? '#eab308' : '#ef4444';
       ctx.fillRect(3, S - 6, Math.round(bw * hp), 4);
 
-      // Own-tower indicator dot
-      if (isOwn) {
+      // Own-tower dot
+      if (isOwn && !isSelected) {
         ctx.fillStyle = lite;
         ctx.fillRect(S - 5, 2, 3, 3);
       }

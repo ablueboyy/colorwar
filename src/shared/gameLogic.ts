@@ -2,7 +2,7 @@ import type { GameState, Tower, Projectile, PlayerId, CellColor } from './types'
 import {
   BOARD_WIDTH, BOARD_HEIGHT, TICK_RATE, GAME_DURATION, KO_THRESHOLD,
   BASE_INCOME_PER_SECOND, CELL_INCOME_PER_SECOND, CELL_INCOME_CAP,
-  INITIAL_P1_COLS, INITIAL_P2_COLS, STARTING_MONEY, TOWER_CONFIGS,
+  INITIAL_P1_COLS, INITIAL_P2_COLS, STARTING_MONEY, TOWER_CONFIGS, LEVEL_MULTS,
 } from './config';
 
 let nextId = 0;
@@ -34,12 +34,16 @@ export function createInitialState(): GameState {
   };
 }
 
+function lm(tower: Tower) {
+  return LEVEL_MULTS[tower.level - 1] ?? LEVEL_MULTS[0];
+}
+
 function findTarget(
   state: GameState,
   tower: Tower,
 ): { x: number; y: number } | null {
   const cfg = TOWER_CONFIGS[tower.type];
-  const range = cfg.range;
+  const range = cfg.range * lm(tower).range;
   const tx = tower.x, ty = tower.y;
 
   // Sniper prefers enemy towers
@@ -57,8 +61,8 @@ function findTarget(
   // Find nearest non-owned cell
   let bestCell: { x: number; y: number } | null = null;
   let bestDist = Infinity;
-  const x0 = Math.max(0, tx - range), x1 = Math.min(BOARD_WIDTH - 1, tx + range);
-  const y0 = Math.max(0, ty - range), y1 = Math.min(BOARD_HEIGHT - 1, ty + range);
+  const x0 = Math.max(0, Math.floor(tx - range)), x1 = Math.min(BOARD_WIDTH - 1, Math.ceil(tx + range));
+  const y0 = Math.max(0, Math.floor(ty - range)), y1 = Math.min(BOARD_HEIGHT - 1, Math.ceil(ty + range));
 
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
@@ -92,7 +96,7 @@ function fireProjectiles(state: GameState, tower: Tower, target: { x: number; y:
       y: tower.y + 0.5,
       vx: Math.cos(angle) * cfg.bulletSpeed,
       vy: Math.sin(angle) * cfg.bulletSpeed,
-      towerDamage: cfg.towerDamage,
+      towerDamage: cfg.towerDamage * lm(tower).dmg,
       splashRadius: cfg.splashRadius,
       lifetime,
     });
@@ -119,9 +123,10 @@ export function stepGame(state: GameState): void {
   for (const sup of state.towers) {
     const cfg = TOWER_CONFIGS[sup.type];
     if (cfg.speedBoost <= 0 || !sup.active) continue;
+    const effRange = cfg.supportRange * lm(sup).range;
     for (const t of state.towers) {
       if (t.owner !== sup.owner || t.id === sup.id || !t.active) continue;
-      if (Math.hypot(t.x - sup.x, t.y - sup.y) <= cfg.supportRange) {
+      if (Math.hypot(t.x - sup.x, t.y - sup.y) <= effRange) {
         boosts.set(t.id, Math.min((boosts.get(t.id) ?? 1) + cfg.speedBoost, 2.5));
       }
     }
@@ -131,10 +136,12 @@ export function stepGame(state: GameState): void {
   for (const medic of state.towers) {
     const cfg = TOWER_CONFIGS[medic.type];
     if (cfg.healPerTick <= 0 || !medic.active) continue;
+    const effRange = cfg.healRange * lm(medic).range;
+    const healAmt = cfg.healPerTick * lm(medic).speed;
     for (const t of state.towers) {
       if (t.owner !== medic.owner || t.id === medic.id || t.hp >= t.maxHp) continue;
-      if (Math.hypot(t.x - medic.x, t.y - medic.y) <= cfg.healRange) {
-        t.hp = Math.min(t.maxHp, t.hp + cfg.healPerTick);
+      if (Math.hypot(t.x - medic.x, t.y - medic.y) <= effRange) {
+        t.hp = Math.min(t.maxHp, t.hp + healAmt);
       }
     }
   }
@@ -146,7 +153,7 @@ export function stepGame(state: GameState): void {
     if (!tower.active || cfg.shootInterval === 0) continue;
 
     const boost = boosts.get(tower.id) ?? 1;
-    tower.cooldown -= boost;
+    tower.cooldown -= boost * lm(tower).speed;
 
     if (tower.cooldown <= 0) {
       const target = findTarget(state, tower);

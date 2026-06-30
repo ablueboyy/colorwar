@@ -1,5 +1,5 @@
-import type { GameState, PlayerId, TowerType, ServerMessage } from '../shared/types';
-import { TOWER_CONFIGS } from '../shared/config';
+import type { GameState, PlayerId, Tower, TowerType, ServerMessage } from '../shared/types';
+import { TOWER_CONFIGS, LEVEL_MULTS, UPGRADE_COST_RATIO, MAX_TOWER_LEVEL } from '../shared/config';
 import { WsClient, type ConnStatus } from './wsClient';
 import { Renderer, CELL_SIZE, CANVAS_W, CANVAS_H } from './renderer';
 
@@ -59,6 +59,7 @@ const renderer = new Renderer(canvas);
 let myId: PlayerId | null = null;
 let currentState: GameState | null = null;
 let selectedTower: TowerType | null = 'basic';
+let selectedTowerId: string | null = null;
 let hovered: { x: number; y: number } | null = null;
 let myRoomCode = '';
 
@@ -82,17 +83,58 @@ function buildTowerPanel(): void {
     btn.addEventListener('mouseenter', () => renderTowerInfo(type));
     towerPanel.appendChild(btn);
   }
-  // When the mouse leaves the panel, show the currently selected tower again
-  towerPanel.addEventListener('mouseleave', () => { if (selectedTower) renderTowerInfo(selectedTower); });
+  towerPanel.addEventListener('mouseleave', () => {
+    if (selectedTowerId && currentState) {
+      const t = currentState.towers.find(t => t.id === selectedTowerId);
+      if (t) { renderSelectedTowerInfo(t); return; }
+    }
+    if (selectedTower) renderTowerInfo(selectedTower);
+  });
   selectTower('basic');
 }
 
 function selectTower(type: TowerType): void {
+  selectedTowerId = null;
   selectedTower = type;
   document.querySelectorAll('.tower-btn').forEach(b => {
     (b as HTMLElement).classList.toggle('selected', (b as HTMLElement).dataset.type === type);
   });
   renderTowerInfo(type);
+}
+
+function renderSelectedTowerInfo(tower: Tower): void {
+  const cfg = TOWER_CONFIGS[tower.type];
+  const m = LEVEL_MULTS[tower.level - 1];
+  const upgCost = Math.floor(cfg.cost * UPGRADE_COST_RATIO);
+  const canUp = tower.level < MAX_TOWER_LEVEL;
+  const money = myId ? (currentState?.players[myId].money ?? 0) : 0;
+  const canAfford = money >= upgCost;
+  const nextM = canUp ? LEVEL_MULTS[tower.level] : null;
+
+  towerInfo.innerHTML = `
+    <div class="ti-header">
+      <span class="ti-glyph">${cfg.glyph}</span>
+      <span class="ti-name">${cfg.label}</span>
+      <span class="ti-role" style="background:#22c55e;color:#052e16">Lv.${tower.level}</span>
+      ${canUp
+        ? `<button class="btn-upgrade${canAfford ? '' : ' cant-afford'}" data-id="${tower.id}">升級 $${upgCost}</button>`
+        : `<span style="color:#fbbf24;font-size:0.7rem;margin-left:auto;letter-spacing:2px">MAX</span>`
+      }
+    </div>
+    <div class="ti-desc">
+      範圍×${m.range.toFixed(1)} &nbsp;射速×${m.speed.toFixed(1)} &nbsp;傷害×${m.dmg.toFixed(1)} &nbsp;血量×${m.hp.toFixed(1)}
+      ${nextM ? `<span style="color:#334155"> → Lv.${tower.level + 1}: 範圍×${nextM.range.toFixed(1)} 射速×${nextM.speed.toFixed(1)} 傷害×${nextM.dmg.toFixed(1)}</span>` : ''}
+    </div>
+    <div class="ti-stats">
+      <div class="ti-stat"><span class="lab">HP</span><span class="bars">${Math.floor(tower.hp)} / ${tower.maxHp}</span></div>
+      <div class="ti-stat"><span class="lab">等級</span><span class="bars">${'★'.repeat(tower.level)}${'<span class="empty">★</span>'.repeat(MAX_TOWER_LEVEL - tower.level)}</span></div>
+      <div class="ti-stat"><span class="lab">類型</span><span class="bars">${cfg.role}</span></div>
+    </div>`;
+
+  const btn = towerInfo.querySelector<HTMLButtonElement>('.btn-upgrade');
+  if (btn && canAfford) {
+    btn.addEventListener('click', () => ws.send({ type: 'UPGRADE_TOWER', towerId: tower.id }));
+  }
 }
 
 function bars(value: number, max: number): string {
@@ -157,9 +199,23 @@ canvas.addEventListener('mousemove', (e) => {
 canvas.addEventListener('mouseleave', () => { hovered = null; });
 
 canvas.addEventListener('click', (e) => {
-  if (!currentState || !myId || !selectedTower) return;
+  if (!currentState || !myId) return;
   const { x, y } = getCell(e);
-  ws.send({ type: 'PLACE_TOWER', towerType: selectedTower, x, y });
+  if (x < 0 || x >= 24 || y < 0 || y >= 16) return;
+
+  const hitTower = currentState.towers.find(t => t.x === x && t.y === y && t.owner === myId);
+  if (hitTower) {
+    selectedTowerId = hitTower.id;
+    renderSelectedTowerInfo(hitTower);
+    return;
+  }
+
+  if (selectedTowerId !== null) {
+    selectedTowerId = null;
+    if (selectedTower) renderTowerInfo(selectedTower);
+  }
+
+  if (selectedTower) ws.send({ type: 'PLACE_TOWER', towerType: selectedTower, x, y });
 });
 
 canvas.addEventListener('contextmenu', (e) => {
@@ -167,7 +223,13 @@ canvas.addEventListener('contextmenu', (e) => {
   if (!currentState || !myId) return;
   const { x, y } = getCell(e);
   const tower = currentState.towers.find(t => t.x === x && t.y === y && t.owner === myId);
-  if (tower) ws.send({ type: 'SELL_TOWER', towerId: tower.id });
+  if (tower) {
+    if (selectedTowerId === tower.id) {
+      selectedTowerId = null;
+      if (selectedTower) renderTowerInfo(selectedTower);
+    }
+    ws.send({ type: 'SELL_TOWER', towerId: tower.id });
+  }
 });
 
 // ── HUD update ────────────────────────────────────────────────────────────────
@@ -218,6 +280,7 @@ ws.on((msg: ServerMessage) => {
     case 'GAME_START':
       myId = msg.playerId;
       currentState = msg.state;
+      selectedTowerId = null;
       myIdLabel.textContent = myId === 'p1' ? 'You: P1 (Blue)' : 'You: P2 (Red)';
       myIdLabel.style.color = myId === 'p1' ? '#60a5fa' : '#f87171';
       buildTowerPanel();
@@ -225,8 +288,14 @@ ws.on((msg: ServerMessage) => {
       break;
     case 'STATE':
       currentState = msg.state;
+      if (selectedTowerId) {
+        const sel = currentState.towers.find(t => t.id === selectedTowerId);
+        if (sel) renderSelectedTowerInfo(sel);
+        else { selectedTowerId = null; if (selectedTower) renderTowerInfo(selectedTower); }
+      }
       break;
     case 'GAME_OVER': {
+      selectedTowerId = null;
       currentState = msg.finalState;
       const w = msg.winner;
       overTitle.textContent = w === 'draw' ? 'DRAW!' : w === myId ? 'YOU WIN!' : 'YOU LOSE!';
@@ -271,7 +340,7 @@ playAgainBtn.addEventListener('click', () => location.reload());
 // ── Render loop ───────────────────────────────────────────────────────────────
 function loop(): void {
   if (currentState) {
-    renderer.draw(currentState, myId, selectedTower, hovered);
+    renderer.draw(currentState, myId, selectedTower, hovered, selectedTowerId);
     updateHud(currentState);
   }
   requestAnimationFrame(loop);

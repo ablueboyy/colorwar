@@ -15,6 +15,7 @@ export interface Tower {
   maxHp: number;
   cooldown: number;
   active: boolean;
+  level: number;
 }
 
 export interface Projectile {
@@ -51,7 +52,8 @@ export type ClientMessage =
   | { type: 'CREATE_ROOM' }
   | { type: 'JOIN_ROOM'; code: string }
   | { type: 'PLACE_TOWER'; towerType: TowerType; x: number; y: number }
-  | { type: 'SELL_TOWER'; towerId: string };
+  | { type: 'SELL_TOWER'; towerId: string }
+  | { type: 'UPGRADE_TOWER'; towerId: string };
 
 export type ServerMessage =
   | { type: 'ROOM_CREATED'; code: string; playerId: PlayerId }

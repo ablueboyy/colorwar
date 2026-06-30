@@ -1,7 +1,7 @@
 import { WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage, PlayerId, TowerType } from '../shared/types';
 import { createInitialState, stepGame } from '../shared/gameLogic';
-import { BOARD_WIDTH, BOARD_HEIGHT, TICK_INTERVAL_MS, TICK_RATE, TOWER_CONFIGS, SELL_REFUND_RATIO } from '../shared/config';
+import { BOARD_WIDTH, BOARD_HEIGHT, TICK_INTERVAL_MS, TOWER_CONFIGS, SELL_REFUND_RATIO, LEVEL_MULTS, UPGRADE_COST_RATIO, MAX_TOWER_LEVEL } from '../shared/config';
 
 interface PlayerConn {
   ws: WebSocket;
@@ -41,6 +41,7 @@ export class Room {
 
     if (msg.type === 'PLACE_TOWER') this.placeTower(player.id, msg.towerType, msg.x, msg.y);
     else if (msg.type === 'SELL_TOWER') this.sellTower(player.id, msg.towerId);
+    else if (msg.type === 'UPGRADE_TOWER') this.upgradeTower(player.id, msg.towerId);
   }
 
   private placeTower(pid: PlayerId, type: TowerType, x: number, y: number): void {
@@ -56,8 +57,21 @@ export class Room {
       id: `${pid}_${x}_${y}_${s.tick}`,
       owner: pid, type, x, y,
       hp: cfg.maxHp, maxHp: cfg.maxHp,
-      cooldown: 0, active: true,
+      cooldown: 0, active: true, level: 1,
     });
+  }
+
+  private upgradeTower(pid: PlayerId, towerId: string): void {
+    const tower = this.state.towers.find(t => t.id === towerId && t.owner === pid);
+    if (!tower || tower.level >= MAX_TOWER_LEVEL) return;
+    const cfg = TOWER_CONFIGS[tower.type];
+    const cost = Math.floor(cfg.cost * UPGRADE_COST_RATIO);
+    if (this.state.players[pid].money < cost) return;
+    this.state.players[pid].money -= cost;
+    tower.level++;
+    const m = LEVEL_MULTS[tower.level - 1];
+    tower.maxHp = Math.round(cfg.maxHp * m.hp);
+    tower.hp = tower.maxHp;
   }
 
   private sellTower(pid: PlayerId, towerId: string): void {
