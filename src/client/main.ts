@@ -1,5 +1,5 @@
 import type { GameState, PlayerId, Tower, TowerType, ServerMessage } from '../shared/types';
-import { TOWER_CONFIGS, LEVEL_MULTS, UPGRADE_COST_RATIO, MAX_TOWER_LEVEL, SELL_REFUND_RATIO, LOADOUT_SIZE } from '../shared/config';
+import { TOWER_CONFIGS, LEVEL_MULTS, UPGRADE_COST_RATIO, MAX_TOWER_LEVEL, SELL_REFUND_RATIO, LOADOUT_SIZE, TICK_RATE } from '../shared/config';
 import { WsClient, type ConnStatus } from './wsClient';
 import { Renderer, CELL_SIZE, CANVAS_W, CANVAS_H } from './renderer';
 
@@ -16,6 +16,7 @@ const lobbyError = document.getElementById('lobby-error')!;
 const connStatus = document.getElementById('conn-status')!;
 const loadoutGrid = document.getElementById('loadout-grid')!;
 const loadoutCount = document.getElementById('loadout-count')!;
+const loadoutDetail = document.getElementById('loadout-detail')!;
 
 const roomCodeEl = document.getElementById('room-code-display')!;
 const waitStatus = document.getElementById('wait-status')!;
@@ -95,17 +96,64 @@ function buildLoadoutPicker(): void {
     btn.className = 'lo-btn';
     btn.dataset.type = type;
     btn.innerHTML = `<span class="lo-glyph">${cfg.glyph}</span><span class="lo-label">${cfg.label}</span><span class="lo-cost">$${cfg.cost}</span>`;
-    btn.title = cfg.description;
-    btn.addEventListener('click', () => toggleLoadout(type));
+    // Tap shows the detail panel (touch-friendly) and toggles the pick; desktop
+    // also previews on hover.
+    btn.addEventListener('click', () => { toggleLoadout(type); renderLoadoutDetail(type); });
+    btn.addEventListener('mouseenter', () => renderLoadoutDetail(type));
     loadoutGrid.appendChild(btn);
   }
   refreshLoadoutUI();
+  renderLoadoutDetail(TOWER_ENTRIES[0][0]);
 }
 
 function toggleLoadout(type: TowerType): void {
   if (myLoadout.has(type)) myLoadout.delete(type);
   else if (myLoadout.size < LOADOUT_SIZE) myLoadout.add(type);
   refreshLoadoutUI();
+}
+
+// Shared special-ability description, used by both the lobby detail panel and
+// the in-game tower info panel.
+function specialText(c: (typeof TOWER_CONFIGS)[TowerType]): string {
+  if (c.lob) return '越頂拋射、隨機砸落';
+  if (c.wallHp) return '5×5 護牆，破壞後 15 秒重建';
+  if (c.spreadCount > 1) return `扇形 ${c.spreadCount} 連發`;
+  if (c.splashRadius > 0) return '範圍爆炸染色';
+  if (c.speedBoost > 0) return `周圍友軍射速 +${Math.round(c.speedBoost * 100)}%`;
+  if (c.healPerTick > 0) return '持續修復周圍友軍血量';
+  return '單發單格染色';
+}
+
+function renderLoadoutDetail(type: TowerType): void {
+  const c = TOWER_CONFIGS[type];
+  const range = Math.max(c.range, c.supportRange, c.healRange);
+  const speed = c.shootInterval > 0 ? 1 / c.shootInterval : 0;
+  const shotsPerSec = c.shootInterval > 0 ? TICK_RATE / c.shootInterval : 0;
+  const EMPTY = '<span class="empty">●●●●●</span>';
+  const picked = myLoadout.has(type);
+
+  const fireVal  = c.shootInterval > 0 ? `${shotsPerSec.toFixed(1)} 發/秒` : '不攻擊';
+  const fireBars = c.shootInterval > 0 ? bars(speed, STAT_MAX.speed) : EMPTY;
+  const dmgVal   = c.towerDamage > 0 ? `${c.towerDamage}` : '—';
+  const dmgBars  = c.towerDamage > 0 ? bars(c.towerDamage, STAT_MAX.dmg) : EMPTY;
+  const rangeVal = range > 0 ? `${range} 格` : '—';
+  const rangeBars = range > 0 ? bars(range, STAT_MAX.range) : EMPTY;
+
+  loadoutDetail.innerHTML = `
+    <div class="ld-header">
+      <span class="ld-glyph">${c.glyph}</span>
+      <span class="ld-name">${c.label}</span>
+      <span class="ld-role">${c.role}</span>
+      <span class="ld-status ${picked ? 'in' : 'out'}">${picked ? '✓ 已帶上場' : '未帶'}</span>
+      <span class="ld-cost">$${c.cost}</span>
+    </div>
+    <div class="ld-stats">
+      <div class="ld-stat"><span class="lab">耐久</span><span class="val">${c.maxHp} HP</span><span class="bars">${bars(c.maxHp, STAT_MAX.hp)}</span></div>
+      <div class="ld-stat"><span class="lab">射程</span><span class="val">${rangeVal}</span><span class="bars">${rangeBars}</span></div>
+      <div class="ld-stat"><span class="lab">射速</span><span class="val">${fireVal}</span><span class="bars">${fireBars}</span></div>
+      <div class="ld-stat"><span class="lab">拆塔</span><span class="val">${dmgVal}</span><span class="bars">${dmgBars}</span></div>
+    </div>
+    <div class="ld-desc"><b style="color:#cbd5e1">特性：</b>${specialText(c)}<br>${c.description}</div>`;
 }
 
 function refreshLoadoutUI(): void {
@@ -271,14 +319,7 @@ function renderTowerInfo(type: TowerType): void {
   const fireBars = c.shootInterval > 0 ? bars(speed, STAT_MAX.speed) : '<span class="empty">●●●●●</span>';
   const dmgBars = c.towerDamage > 0 ? bars(c.towerDamage, STAT_MAX.dmg) : '<span class="empty">●●●●●</span>';
 
-  let special: string;
-  if (c.lob) special = '越頂拋射、隨機砸落';
-  else if (c.wallHp) special = '5×5 護牆，破壞後 15 秒重建';
-  else if (c.spreadCount > 1) special = `扇形 ${c.spreadCount} 連發`;
-  else if (c.splashRadius > 0) special = '範圍爆炸染色';
-  else if (c.speedBoost > 0) special = `周圍友軍射速 +${Math.round(c.speedBoost * 100)}%`;
-  else if (c.healPerTick > 0) special = '持續修復周圍友軍血量';
-  else special = '單發單格染色';
+  const special = specialText(c);
 
   towerInfo.innerHTML = `
     <div class="ti-header">
