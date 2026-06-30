@@ -1,5 +1,5 @@
 import type { GameState, PlayerId, TowerType } from '../shared/types';
-import { BOARD_WIDTH, BOARD_HEIGHT, TOWER_CONFIGS } from '../shared/config';
+import { BOARD_WIDTH, BOARD_HEIGHT } from '../shared/config';
 
 export const CELL_SIZE = 30;
 export const CANVAS_W = BOARD_WIDTH * CELL_SIZE;
@@ -85,36 +85,189 @@ export class Renderer {
     const S = CELL_SIZE;
 
     for (const tower of state.towers) {
-      const x = tower.x * S, y = tower.y * S;
+      const px = tower.x * S;
+      const py = tower.y * S;
+      const active = tower.active;
       const isOwn = tower.owner === myId;
-      const bodyColor = !tower.active ? COLORS.towerInactive
-        : tower.owner === 'p1' ? COLORS.p1Dark : COLORS.p2Dark;
-      const borderColor = !tower.active ? '#6b7280'
-        : tower.owner === 'p1' ? COLORS.p1Border : COLORS.p2Border;
+      const p1 = tower.owner === 'p1';
 
-      // Body
-      ctx.fillStyle = bodyColor;
-      ctx.fillRect(x + 3, y + 3, S - 6, S - 10);
+      const dark = !active ? '#2d3748' : p1 ? '#1e3a8a' : '#7f1d1d';
+      const mid  = !active ? '#4a5568' : p1 ? '#2563eb' : '#dc2626';
+      const lite = !active ? '#718096' : p1 ? '#93c5fd' : '#fca5a5';
 
-      // Border (thicker for own towers)
-      ctx.strokeStyle = borderColor;
-      ctx.lineWidth = isOwn ? 2 : 1.5;
-      ctx.strokeRect(x + 3, y + 3, S - 6, S - 10);
-
-      // Label
-      ctx.fillStyle = '#f9fafb';
-      ctx.font = `bold 10px monospace`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(TOWER_CONFIGS[tower.type].glyph, x + S / 2, y + S / 2 - 3);
+      ctx.save();
+      ctx.translate(px, py);
+      this.drawTowerSprite(ctx, tower.type, S, dark, mid, lite);
 
       // HP bar
-      const hpRatio = tower.hp / tower.maxHp;
-      const bw = S - 8;
-      ctx.fillStyle = '#111827';
-      ctx.fillRect(x + 4, y + S - 8, bw, 5);
-      ctx.fillStyle = hpRatio > 0.5 ? '#22c55e' : hpRatio > 0.25 ? '#eab308' : '#ef4444';
-      ctx.fillRect(x + 4, y + S - 8, bw * hpRatio, 5);
+      const hp = tower.hp / tower.maxHp;
+      const bw = S - 6;
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(3, S - 6, bw, 4);
+      ctx.fillStyle = hp > 0.6 ? '#22c55e' : hp > 0.3 ? '#eab308' : '#ef4444';
+      ctx.fillRect(3, S - 6, Math.round(bw * hp), 4);
+
+      // Own-tower indicator dot
+      if (isOwn) {
+        ctx.fillStyle = lite;
+        ctx.fillRect(S - 5, 2, 3, 3);
+      }
+
+      ctx.restore();
+    }
+  }
+
+  private drawTowerSprite(
+    ctx: CanvasRenderingContext2D,
+    type: TowerType,
+    S: number,
+    dark: string,
+    mid: string,
+    lite: string,
+  ): void {
+    const GD = '#1e293b'; // gun metal dark
+    const GM = '#334155'; // gun metal mid
+    const GL = '#4a5568'; // gun metal light
+    const WH = '#f8fafc'; // white highlight
+
+    const r = (x: number, y: number, w: number, h: number, c: string) => {
+      ctx.fillStyle = c;
+      ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+    };
+
+    switch (type) {
+      case 'basic': {
+        // Wide base with side ports + single center barrel
+        r(5, 13, 20, 9, dark);
+        r(6, 14, 18, 7, mid);
+        r(8, 15, 5, 4, dark);     // left port
+        r(17, 15, 5, 4, dark);    // right port
+        r(12, 3, 6, 12, GD);      // barrel
+        r(13, 4, 4, 10, GM);
+        r(13, 4, 2, 8, GL);
+        r(11, 2, 8, 3, GM);       // muzzle cap
+        r(11, 2, 8, 1, GL);
+        break;
+      }
+      case 'rapid': {
+        // Narrow base + twin thin barrels
+        r(7, 15, 16, 7, dark);
+        r(8, 16, 14, 5, mid);
+        r(13, 9, 4, 8, dark);     // center link
+        r(8, 4, 4, 14, GD);       // left barrel
+        r(9, 5, 2, 12, GL);
+        r(7, 3, 5, 3, GM);        // left muzzle
+        r(18, 4, 4, 14, GD);      // right barrel
+        r(19, 5, 2, 12, GL);
+        r(18, 3, 5, 3, GM);       // right muzzle
+        break;
+      }
+      case 'spread': {
+        // Very wide base + three barrels fanning out
+        r(3, 15, 24, 7, dark);
+        r(4, 16, 22, 5, mid);
+        r(13, 5, 4, 12, GD);      // center barrel
+        r(14, 6, 2, 10, GL);
+        ctx.save();               // left barrel (angled)
+        ctx.translate(9, 16);
+        ctx.rotate(-0.52);
+        r(-2, -12, 4, 12, GD);
+        r(-1, -11, 2, 10, GL);
+        ctx.restore();
+        ctx.save();               // right barrel (angled)
+        ctx.translate(21, 16);
+        ctx.rotate(0.52);
+        r(-2, -12, 4, 12, GD);
+        r(-1, -11, 2, 10, GL);
+        ctx.restore();
+        break;
+      }
+      case 'sniper': {
+        // Small base + ultra-long thin barrel + scope
+        r(9, 16, 12, 6, dark);
+        r(10, 17, 10, 4, mid);
+        r(14, 1, 2, 17, GD);      // ultra-long barrel
+        r(14, 2, 1, 15, GL);
+        r(8, 6, 14, 4, GD);       // scope body
+        r(9, 7, 12, 2, GM);
+        r(13, 7, 4, 2, GL);       // scope lens
+        r(13, 1, 4, 2, GM);       // muzzle
+        r(13, 0, 2, 2, GL);
+        break;
+      }
+      case 'artillery': {
+        // Heavy wide base with treads + short wide barrel
+        r(3, 14, 24, 8, dark);
+        r(4, 15, 22, 6, mid);
+        r(2, 18, 5, 4, GD);       // left tread
+        r(23, 18, 5, 4, GD);      // right tread
+        r(3, 19, 3, 2, GL);
+        r(24, 19, 3, 2, GL);
+        r(8, 5, 14, 10, GD);      // short wide barrel
+        r(9, 6, 12, 8, GM);
+        r(9, 6, 5, 5, GL);
+        r(6, 3, 18, 4, GM);       // wide muzzle
+        r(7, 4, 16, 2, GL);
+        break;
+      }
+      case 'splash': {
+        // Round body + wide mortar barrel
+        ctx.beginPath();
+        ctx.arc(15, 16, 9, 0, Math.PI * 2);
+        ctx.fillStyle = dark; ctx.fill();
+        ctx.beginPath();
+        ctx.arc(15, 16, 7, 0, Math.PI * 2);
+        ctx.fillStyle = mid; ctx.fill();
+        ctx.beginPath();          // ring detail
+        ctx.arc(15, 16, 5, 0, Math.PI * 2);
+        ctx.strokeStyle = lite; ctx.lineWidth = 1; ctx.stroke();
+        r(10, 3, 10, 8, GD);     // wide barrel
+        r(11, 4, 8, 6, GM);
+        r(11, 4, 4, 3, GL);
+        r(8, 1, 14, 4, GM);      // wide muzzle
+        r(9, 2, 12, 2, GL);
+        break;
+      }
+      case 'support': {
+        // Square body + yellow lightning bolt + side energy bars
+        r(4, 4, 22, 18, dark);
+        r(5, 5, 20, 16, mid);
+        r(3, 7, 2, 12, lite);    // left energy bar
+        r(25, 7, 2, 12, lite);   // right energy bar
+        r(3, 8, 1, 10, WH);
+        r(26, 8, 1, 10, WH);
+        ctx.fillStyle = '#fbbf24';
+        ctx.beginPath();          // lightning bolt (outer)
+        ctx.moveTo(16, 7);
+        ctx.lineTo(12, 15); ctx.lineTo(15, 15);
+        ctx.lineTo(14, 21);
+        ctx.lineTo(19, 13); ctx.lineTo(16, 13);
+        ctx.lineTo(19, 7);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#fde68a';
+        ctx.beginPath();          // lightning bolt (inner highlight)
+        ctx.moveTo(16, 8);
+        ctx.lineTo(13, 14); ctx.lineTo(15, 14);
+        ctx.lineTo(14, 19);
+        ctx.lineTo(18, 13); ctx.lineTo(16, 13);
+        ctx.lineTo(18, 8);
+        ctx.closePath(); ctx.fill();
+        break;
+      }
+      case 'repair': {
+        // Square body + white medical cross
+        r(4, 4, 22, 18, dark);
+        r(5, 5, 20, 16, mid);
+        r(6, 6, 4, 4, dark);     // corner accents
+        r(20, 6, 4, 4, dark);
+        r(6, 18, 4, 2, dark);
+        r(20, 18, 4, 2, dark);
+        r(12, 8, 6, 10, WH);    // cross vertical
+        r(8, 11, 14, 4, WH);    // cross horizontal
+        r(13, 9, 4, 8, '#bfdbfe');  // cross inner highlight
+        r(9, 12, 12, 2, '#bfdbfe');
+        break;
+      }
     }
   }
 

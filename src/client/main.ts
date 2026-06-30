@@ -42,6 +42,16 @@ const overTitle = document.getElementById('over-title')!;
 const overStats = document.getElementById('over-stats')!;
 const playAgainBtn = document.getElementById('play-again-btn') as HTMLButtonElement;
 
+const terrP1El      = document.getElementById('terr-p1')      as HTMLElement;
+const terrNeutralEl = document.getElementById('terr-neutral') as HTMLElement;
+const terrP2El      = document.getElementById('terr-p2')      as HTMLElement;
+
+const overTerrP1El      = document.getElementById('over-terr-p1')      as HTMLElement;
+const overTerrNeutralEl = document.getElementById('over-terr-neutral') as HTMLElement;
+const overTerrP2El      = document.getElementById('over-terr-p2')      as HTMLElement;
+const overP1LabelEl     = document.getElementById('over-p1-label')!;
+const overP2LabelEl     = document.getElementById('over-p2-label')!;
+
 // ── State ────────────────────────────────────────────────────────────────────
 const ws = new WsClient();
 const renderer = new Renderer(canvas);
@@ -67,7 +77,7 @@ function buildTowerPanel(): void {
     const btn = document.createElement('button');
     btn.className = 'tower-btn';
     btn.dataset.type = type;
-    btn.innerHTML = `<span class="tw-label">${cfg.label}</span><span class="tw-cost">$${cfg.cost}</span>`;
+    btn.innerHTML = `<span class="tw-glyph">${cfg.glyph}</span><span class="tw-label">${cfg.label}</span><span class="tw-cost">$${cfg.cost}</span>`;
     btn.addEventListener('click', () => selectTower(type));
     btn.addEventListener('mouseenter', () => renderTowerInfo(type));
     towerPanel.appendChild(btn);
@@ -108,11 +118,12 @@ function renderTowerInfo(type: TowerType): void {
 
   towerInfo.innerHTML = `
     <div class="ti-header">
-      <span class="ti-name">${c.glyph}　${c.label}</span>
+      <span class="ti-glyph">${c.glyph}</span>
+      <span class="ti-name">${c.label}</span>
       <span class="ti-role">${c.role}</span>
       <span class="ti-cost">$${c.cost}</span>
     </div>
-    <div class="ti-desc">${c.description}<br><span style="color:#94a3b8">特性：${special}</span></div>
+    <div class="ti-desc">${c.description} <span style="color:#334155">— ${special}</span></div>
     <div class="ti-stats">
       <div class="ti-stat"><span class="lab">血量</span><span class="bars">${bars(c.maxHp, STAT_MAX.hp)}</span></div>
       <div class="ti-stat"><span class="lab">射程</span><span class="bars">${bars(range, STAT_MAX.range)}</span></div>
@@ -165,12 +176,20 @@ function updateHud(state: GameState): void {
   const m = Math.floor(t / 60).toString().padStart(2, '0');
   const s = Math.floor(t % 60).toString().padStart(2, '0');
   timerEl.textContent = `${m}:${s}`;
+  if (t < 30) timerEl.classList.add('warning');
+  else timerEl.classList.remove('warning');
 
   const total = 24 * 16;
   p1MoneyEl.textContent = `$${Math.floor(state.players.p1.money)}`;
   p2MoneyEl.textContent = `$${Math.floor(state.players.p2.money)}`;
   p1CellsEl.textContent = `${state.players.p1.cells} (${Math.round(state.players.p1.cells / total * 100)}%)`;
   p2CellsEl.textContent = `${state.players.p2.cells} (${Math.round(state.players.p2.cells / total * 100)}%)`;
+
+  const p1pct = state.players.p1.cells / total * 100;
+  const p2pct = state.players.p2.cells / total * 100;
+  terrP1El.style.width      = p1pct + '%';
+  terrNeutralEl.style.width = Math.max(0, 100 - p1pct - p2pct) + '%';
+  terrP2El.style.width      = p2pct + '%';
 
   // Dim tower buttons if can't afford
   if (myId) {
@@ -207,15 +226,23 @@ ws.on((msg: ServerMessage) => {
     case 'STATE':
       currentState = msg.state;
       break;
-    case 'GAME_OVER':
+    case 'GAME_OVER': {
       currentState = msg.finalState;
       const w = msg.winner;
-      overTitle.textContent = w === 'draw' ? 'DRAW!' : w === myId ? 'YOU WIN!' : 'YOU LOSE';
+      overTitle.textContent = w === 'draw' ? 'DRAW!' : w === myId ? 'YOU WIN!' : 'YOU LOSE!';
       overTitle.style.color = w === 'draw' ? '#facc15' : w === myId ? '#4ade80' : '#f87171';
-      const s = msg.finalState;
-      overStats.textContent = `P1: ${s.players.p1.cells} cells | P2: ${s.players.p2.cells} cells`;
+      const fs = msg.finalState;
+      const p1p = Math.round(fs.players.p1.cells / 384 * 100);
+      const p2p = Math.round(fs.players.p2.cells / 384 * 100);
+      overTerrP1El.style.width      = p1p + '%';
+      overTerrNeutralEl.style.width = Math.max(0, 100 - p1p - p2p) + '%';
+      overTerrP2El.style.width      = p2p + '%';
+      overP1LabelEl.textContent = `P1  ${p1p}%`;
+      overP2LabelEl.textContent = `${p2p}%  P2`;
+      overStats.textContent = `${fs.players.p1.cells} 格 vs ${fs.players.p2.cells} 格`;
       showScreen('gameover');
       break;
+    }
     case 'ERROR':
       lobbyError.textContent = msg.message;
       break;
