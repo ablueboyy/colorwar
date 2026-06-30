@@ -2,7 +2,8 @@ export type PlayerId = 'p1' | 'p2';
 export type CellColor = 'neutral' | PlayerId;
 export type TowerType =
   | 'basic' | 'rapid' | 'spread' | 'sniper'
-  | 'artillery' | 'splash' | 'support' | 'repair';
+  | 'artillery' | 'splash' | 'flak' | 'wall'
+  | 'support' | 'repair';
 export type GamePhase = 'waiting' | 'playing' | 'ended';
 
 export interface Tower {
@@ -30,6 +31,10 @@ export interface Projectile {
   towerDamage: number;
   splashRadius: number;
   lifetime: number;
+  // Lobbed shells (高射砲) fly over everything and only detonate at (tx, ty).
+  lob?: boolean;
+  tx?: number;
+  ty?: number;
 }
 
 export interface PlayerState {

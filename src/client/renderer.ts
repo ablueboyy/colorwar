@@ -135,9 +135,9 @@ export class Renderer {
       const mid  = !active ? '#4a5568' : p1 ? '#2563eb' : '#dc2626';
       const lite = !active ? '#718096' : p1 ? '#93c5fd' : '#fca5a5';
 
-      // Sprite is rotated to face the turret's aim; support/repair never aim
-      // (they keep the default "up" angle). UI overlays stay upright.
-      const rotates = tower.type !== 'support' && tower.type !== 'repair';
+      // Only towers that actually fire rotate to face their aim; walls,
+      // support and repair stay upright. UI overlays never rotate.
+      const rotates = TOWER_CONFIGS[tower.type].shootInterval > 0;
       ctx.save();
       if (rotates) {
         const ang = this.smoothAngle(tower.id, tower.aim);
@@ -314,6 +314,34 @@ export class Renderer {
         r(11, 4, 4, 3, GL);
         r(8, 1, 14, 4, GM);      // wide muzzle
         r(9, 2, 12, 2, GL);
+        break;
+      }
+      case 'flak': {
+        // Boxy carriage + long high-angle barrel pointing up
+        r(6, 16, 18, 8, dark);
+        r(7, 17, 16, 6, mid);
+        r(3, 20, 5, 3, GD);       // left outrigger
+        r(22, 20, 5, 3, GD);      // right outrigger
+        r(10, 12, 10, 6, GM);     // breech block
+        r(13, 1, 4, 16, GD);      // long barrel
+        r(14, 2, 2, 14, GL);
+        r(11, 0, 8, 3, GM);       // muzzle brake
+        r(11, 0, 8, 1, GL);
+        break;
+      }
+      case 'wall': {
+        // Brick wall — staggered courses, ownership-tinted
+        r(2, 5, 26, 20, dark);
+        r(3, 6, 24, 18, mid);
+        r(3, 6, 24, 1, lite);     // top highlight
+        // horizontal mortar lines
+        r(3, 12, 24, 2, dark);
+        r(3, 18, 24, 2, dark);
+        // staggered vertical seams
+        r(15, 6, 2, 6, dark);
+        r(9, 14, 2, 4, dark);
+        r(21, 14, 2, 4, dark);
+        r(15, 20, 2, 4, dark);
         break;
       }
       case 'support': {

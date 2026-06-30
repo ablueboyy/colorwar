@@ -38,6 +38,7 @@ export interface TowerConfig {
   speedBoost: number;
   healPerTick: number;
   healRange: number;
+  lob?: boolean; // shells fly over territory and detonate at the target (高射砲)
   label: string;
   glyph: string;
   role: string;
@@ -97,14 +98,35 @@ export const TOWER_CONFIGS: Record<TowerType, TowerConfig> = {
     description: '全場最遠射程＋高拆塔傷害，隔空狙殺敵方砲台，但爆炸染色範圍很小、射速慢、血薄。',
   },
   splash: {
-    cost: 190, maxHp: 95,
+    cost: 200, maxHp: 75,
     shootInterval: 80, range: 6, bulletSpeed: 0.3,
-    towerDamage: 10, splashRadius: 2.7,
+    towerDamage: 10, splashRadius: 2.3,
     spreadCount: 1, spreadAngleDeg: 0,
     supportRange: 0, speedBoost: 0,
     healPerTick: 0, healRange: 0,
     label: '範圍砲', glyph: 'P', role: '範圍翻盤',
-    description: '命中點超大範圍一次染色、耐打，適合近距離大面積翻盤，但射程短、幾乎不能拆塔。',
+    description: '命中點大範圍一次染色，適合近距離大面積翻盤，但又貴又脆、射程短、幾乎不能拆塔。',
+  },
+  flak: {
+    cost: 240, maxHp: 70,
+    shootInterval: 150, range: 16, bulletSpeed: 0.35,
+    towerDamage: 22, splashRadius: 1.5,
+    spreadCount: 1, spreadAngleDeg: 0,
+    supportRange: 0, speedBoost: 0,
+    healPerTick: 0, healRange: 0,
+    lob: true,
+    label: '高射砲', glyph: 'F', role: '後排轟炸',
+    description: '拋射砲彈越過領地與牆壁，直擊敵方深處後排並範圍染色。射程極遠，但又慢又貴、血薄。',
+  },
+  wall: {
+    cost: 60, maxHp: 450,
+    shootInterval: 0, range: 0, bulletSpeed: 0,
+    towerDamage: 0, splashRadius: 0,
+    spreadCount: 0, spreadAngleDeg: 0,
+    supportRange: 0, speedBoost: 0,
+    healPerTick: 0, healRange: 0,
+    label: '防禦牆', glyph: 'W', role: '阻擋子彈',
+    description: '不發射。高血量的牆，會擋下敵方子彈保護後方砲台（自己的子彈可穿過），被打爆才會消失。便宜，可排成防線。',
   },
   support: {
     cost: 95, maxHp: 120,
