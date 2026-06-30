@@ -21,6 +21,9 @@ const COLORS = {
 
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
+  // Smoothly-interpolated facing angle per tower, so turrets visibly rotate
+  // toward their authoritative aim rather than snapping each STATE.
+  private displayAngles = new Map<string, number>();
 
   constructor(canvas: HTMLCanvasElement) {
     canvas.width = CANVAS_W;
@@ -132,9 +135,24 @@ export class Renderer {
       const mid  = !active ? '#4a5568' : p1 ? '#2563eb' : '#dc2626';
       const lite = !active ? '#718096' : p1 ? '#93c5fd' : '#fca5a5';
 
+      // Sprite is rotated to face the turret's aim; support/repair never aim
+      // (they keep the default "up" angle). UI overlays stay upright.
+      const rotates = tower.type !== 'support' && tower.type !== 'repair';
+      ctx.save();
+      if (rotates) {
+        const ang = this.smoothAngle(tower.id, tower.aim);
+        ctx.translate(px + S / 2, py + S / 2);
+        ctx.rotate(ang + Math.PI / 2);
+        ctx.translate(-S / 2, -S / 2);
+      } else {
+        ctx.translate(px, py);
+      }
+      this.drawTowerSprite(ctx, tower.type, S, dark, mid, lite);
+      ctx.restore();
+
+      // ── Overlays (always upright) ──
       ctx.save();
       ctx.translate(px, py);
-      this.drawTowerSprite(ctx, tower.type, S, dark, mid, lite);
 
       // Selection outline
       if (isSelected) {
@@ -165,6 +183,26 @@ export class Renderer {
 
       ctx.restore();
     }
+
+    // Drop angle state for towers that no longer exist.
+    if (this.displayAngles.size > state.towers.length + 16) {
+      const live = new Set(state.towers.map(t => t.id));
+      for (const id of this.displayAngles.keys()) {
+        if (!live.has(id)) this.displayAngles.delete(id);
+      }
+    }
+  }
+
+  // Rotate the displayed angle a fraction of the way toward the target each
+  // frame, taking the shorter way around the circle.
+  private smoothAngle(id: string, target: number): number {
+    const cur = this.displayAngles.get(id);
+    if (cur === undefined) { this.displayAngles.set(id, target); return target; }
+    let diff = target - cur;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff)); // normalize to [-PI, PI]
+    const next = cur + diff * 0.25;
+    this.displayAngles.set(id, next);
+    return next;
   }
 
   private drawTowerSprite(

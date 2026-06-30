@@ -58,6 +58,7 @@ export class Room {
       owner: pid, type, x, y,
       hp: cfg.maxHp, maxHp: cfg.maxHp,
       cooldown: 0, active: true, level: 1,
+      aim: -Math.PI / 2, // start pointing up; offensive towers snap to target on first tick
     });
   }
 

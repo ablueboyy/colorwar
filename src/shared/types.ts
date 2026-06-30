@@ -16,6 +16,7 @@ export interface Tower {
   cooldown: number;
   active: boolean;
   level: number;
+  aim: number; // radians, atan2(dy,dx) toward current target; sprite's natural orientation is "up"
 }
 
 export interface Projectile {

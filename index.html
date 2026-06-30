@@ -245,11 +245,48 @@
     #terr-p2      { background: #ef4444; }
 
     /* Canvas */
+    #canvas-wrap { position: relative; line-height: 0; }
     #game-canvas {
       display: block;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
       border: 1px solid #1e3655;
+    }
+
+    /* Floating upgrade / sell menu on the selected tower */
+    #tower-actions {
+      position: absolute;
+      display: flex;
+      gap: 4px;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 5;
+    }
+    .act-btn {
+      pointer-events: auto;
+      font-family: inherit;
+      font-size: 0.66rem;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      padding: 4px 9px;
+      border-radius: 4px;
+      cursor: pointer;
+      white-space: nowrap;
+      line-height: 1.2;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+      transition: filter 0.1s, opacity 0.1s;
+    }
+    .act-btn:hover:not(:disabled) { filter: brightness(1.25); }
+    .act-upgrade {
+      background: #15803d;
+      border: 1px solid #4ade80;
+      color: #dcfce7;
+    }
+    .act-upgrade:disabled { opacity: 0.4; cursor: not-allowed; }
+    .act-sell {
+      background: #991b1b;
+      border: 1px solid #f87171;
+      color: #fee2e2;
     }
 
     /* Tower panel */
@@ -394,23 +431,6 @@
     #over-terr-neutral { background: #1e3655; transition: width 0.5s ease; }
     #over-terr-p2      { background: #ef4444; transition: width 0.5s ease; }
 
-    /* ── Upgrade button (inside tower-info) ── */
-    .btn-upgrade {
-      background: #0d2547;
-      border: 1px solid #2563eb;
-      border-radius: 4px;
-      color: #93c5fd;
-      cursor: pointer;
-      font-family: inherit;
-      font-size: 0.68rem;
-      padding: 4px 12px;
-      letter-spacing: 1px;
-      margin-left: auto;
-      transition: background 0.1s, border-color 0.1s;
-    }
-    .btn-upgrade:hover { background: #1e3a8a; border-color: #60a5fa; color: #bfdbfe; }
-    .btn-upgrade.cant-afford { opacity: 0.35; cursor: not-allowed; }
-
     /* ── Buttons ── */
     .btn {
       background: #0b1526;
@@ -500,7 +520,13 @@
       <div id="terr-p2"      class="terr-seg" style="width:0%"></div>
     </div>
 
-    <canvas id="game-canvas"></canvas>
+    <div id="canvas-wrap">
+      <canvas id="game-canvas"></canvas>
+      <div id="tower-actions" style="display:none">
+        <button id="act-upgrade" class="act-btn act-upgrade"></button>
+        <button id="act-sell" class="act-btn act-sell"></button>
+      </div>
+    </div>
 
     <div id="tower-panel"><!-- filled by JS --></div>
 

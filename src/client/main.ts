@@ -1,5 +1,5 @@
 import type { GameState, PlayerId, Tower, TowerType, ServerMessage } from '../shared/types';
-import { TOWER_CONFIGS, LEVEL_MULTS, UPGRADE_COST_RATIO, MAX_TOWER_LEVEL } from '../shared/config';
+import { TOWER_CONFIGS, LEVEL_MULTS, UPGRADE_COST_RATIO, MAX_TOWER_LEVEL, SELL_REFUND_RATIO } from '../shared/config';
 import { WsClient, type ConnStatus } from './wsClient';
 import { Renderer, CELL_SIZE, CANVAS_W, CANVAS_H } from './renderer';
 
@@ -51,6 +51,10 @@ const overTerrNeutralEl = document.getElementById('over-terr-neutral') as HTMLEl
 const overTerrP2El      = document.getElementById('over-terr-p2')      as HTMLElement;
 const overP1LabelEl     = document.getElementById('over-p1-label')!;
 const overP2LabelEl     = document.getElementById('over-p2-label')!;
+
+const towerActionsEl = document.getElementById('tower-actions') as HTMLElement;
+const actUpgradeBtn  = document.getElementById('act-upgrade')   as HTMLButtonElement;
+const actSellBtn     = document.getElementById('act-sell')      as HTMLButtonElement;
 
 // ── State ────────────────────────────────────────────────────────────────────
 const ws = new WsClient();
@@ -118,7 +122,6 @@ function renderSelectedTowerInfo(tower: Tower): void {
 
   const cfg = TOWER_CONFIGS[tower.type];
   const m = LEVEL_MULTS[tower.level - 1];
-  const upgCost = Math.floor(cfg.cost * UPGRADE_COST_RATIO);
   const canUp = tower.level < MAX_TOWER_LEVEL;
   const nextM = canUp ? LEVEL_MULTS[tower.level] : null;
 
@@ -127,10 +130,7 @@ function renderSelectedTowerInfo(tower: Tower): void {
       <span class="ti-glyph">${cfg.glyph}</span>
       <span class="ti-name">${cfg.label}</span>
       <span class="ti-role" style="background:#22c55e;color:#052e16">Lv.${tower.level}</span>
-      ${canUp
-        ? `<button class="btn-upgrade" data-id="${tower.id}">升級 $${upgCost}</button>`
-        : `<span style="color:#fbbf24;font-size:0.7rem;margin-left:auto;letter-spacing:2px">MAX</span>`
-      }
+      <span class="ti-cost">${cfg.role}</span>
     </div>
     <div class="ti-desc">
       範圍×${m.range.toFixed(1)} &nbsp;射速×${m.speed.toFixed(1)} &nbsp;傷害×${m.dmg.toFixed(1)} &nbsp;血量×${m.hp.toFixed(1)}
@@ -139,7 +139,7 @@ function renderSelectedTowerInfo(tower: Tower): void {
     <div class="ti-stats">
       <div class="ti-stat"><span class="lab">HP</span><span class="bars" id="sel-hp">${Math.floor(tower.hp)} / ${tower.maxHp}</span></div>
       <div class="ti-stat"><span class="lab">等級</span><span class="bars">${'★'.repeat(tower.level)}${'<span class="empty">★</span>'.repeat(MAX_TOWER_LEVEL - tower.level)}</span></div>
-      <div class="ti-stat"><span class="lab">類型</span><span class="bars">${cfg.role}</span></div>
+      <div class="ti-stat"><span class="lab">操作</span><span class="bars" style="color:#64748b">點砲台上方按鈕升級／賣出</span></div>
     </div>`;
 
   panelTowerId = tower.id;
@@ -150,13 +150,56 @@ function renderSelectedTowerInfo(tower: Tower): void {
 function updateSelectedTowerVolatile(tower: Tower): void {
   const hpEl = document.getElementById('sel-hp');
   if (hpEl) hpEl.textContent = `${Math.floor(tower.hp)} / ${tower.maxHp}`;
+}
 
-  const btn = towerInfo.querySelector<HTMLButtonElement>('.btn-upgrade');
-  if (btn) {
-    const upgCost = Math.floor(TOWER_CONFIGS[tower.type].cost * UPGRADE_COST_RATIO);
-    const money = myId ? (currentState?.players[myId].money ?? 0) : 0;
-    btn.classList.toggle('cant-afford', money < upgCost);
+// Floating upgrade/sell menu anchored to the top of the selected tower's
+// range circle. Buttons are never recreated — only repositioned and relabelled
+// — so clicks stay reliable despite 20 Hz state updates.
+function updateTowerActions(): void {
+  if (!selectedTowerId || !currentState || currentState.phase !== 'playing') {
+    towerActionsEl.style.display = 'none';
+    return;
   }
+  const tower = currentState.towers.find(t => t.id === selectedTowerId);
+  if (!tower || tower.owner !== myId) {
+    towerActionsEl.style.display = 'none';
+    return;
+  }
+
+  const rect = canvas.getBoundingClientRect();
+  const dispCell = rect.width / 24;
+  const cfg = TOWER_CONFIGS[tower.type];
+  const m = LEVEL_MULTS[tower.level - 1];
+  const effRange = Math.max(cfg.range, cfg.supportRange, cfg.healRange) * m.range;
+  const cx = (tower.x + 0.5) * dispCell;
+  const cy = (tower.y + 0.5) * dispCell;
+  const radiusPx = effRange * dispCell;
+
+  const menuX = Math.max(54, Math.min(rect.width - 54, cx));
+  const menuY = Math.max(14, cy - radiusPx);
+  towerActionsEl.style.left = `${menuX}px`;
+  towerActionsEl.style.top = `${menuY}px`;
+
+  const money = myId ? (currentState.players[myId].money ?? 0) : 0;
+  const canUp = tower.level < MAX_TOWER_LEVEL;
+  if (canUp) {
+    const upgCost = Math.floor(cfg.cost * UPGRADE_COST_RATIO);
+    actUpgradeBtn.textContent = `▲ 升級 $${upgCost}`;
+    actUpgradeBtn.disabled = money < upgCost;
+  } else {
+    actUpgradeBtn.textContent = '★ MAX';
+    actUpgradeBtn.disabled = true;
+  }
+  actSellBtn.textContent = `✕ 賣出 $${Math.floor(cfg.cost * SELL_REFUND_RATIO)}`;
+
+  towerActionsEl.style.display = 'flex';
+}
+
+function deselectTower(): void {
+  selectedTowerId = null;
+  panelTowerId = null;
+  towerActionsEl.style.display = 'none';
+  if (selectedTower) renderTowerInfo(selectedTower);
 }
 
 function bars(value: number, max: number): string {
@@ -232,10 +275,7 @@ canvas.addEventListener('click', (e) => {
     return;
   }
 
-  if (selectedTowerId !== null) {
-    selectedTowerId = null;
-    if (selectedTower) renderTowerInfo(selectedTower);
-  }
+  if (selectedTowerId !== null) deselectTower();
 
   if (selectedTower) ws.send({ type: 'PLACE_TOWER', towerType: selectedTower, x, y });
 });
@@ -246,12 +286,19 @@ canvas.addEventListener('contextmenu', (e) => {
   const { x, y } = getCell(e);
   const tower = currentState.towers.find(t => t.x === x && t.y === y && t.owner === myId);
   if (tower) {
-    if (selectedTowerId === tower.id) {
-      selectedTowerId = null;
-      if (selectedTower) renderTowerInfo(selectedTower);
-    }
+    if (selectedTowerId === tower.id) deselectTower();
     ws.send({ type: 'SELL_TOWER', towerId: tower.id });
   }
+});
+
+// ── Floating action buttons (created once → reliable clicks) ──
+actUpgradeBtn.addEventListener('click', () => {
+  if (selectedTowerId) ws.send({ type: 'UPGRADE_TOWER', towerId: selectedTowerId });
+});
+actSellBtn.addEventListener('click', () => {
+  if (!selectedTowerId) return;
+  ws.send({ type: 'SELL_TOWER', towerId: selectedTowerId });
+  deselectTower();
 });
 
 // ── HUD update ────────────────────────────────────────────────────────────────
@@ -303,6 +350,8 @@ ws.on((msg: ServerMessage) => {
       myId = msg.playerId;
       currentState = msg.state;
       selectedTowerId = null;
+      panelTowerId = null;
+      towerActionsEl.style.display = 'none';
       myIdLabel.textContent = myId === 'p1' ? 'You: P1 (Blue)' : 'You: P2 (Red)';
       myIdLabel.style.color = myId === 'p1' ? '#60a5fa' : '#f87171';
       buildTowerPanel();
@@ -313,11 +362,12 @@ ws.on((msg: ServerMessage) => {
       if (selectedTowerId) {
         const sel = currentState.towers.find(t => t.id === selectedTowerId);
         if (sel) renderSelectedTowerInfo(sel);
-        else { selectedTowerId = null; if (selectedTower) renderTowerInfo(selectedTower); }
+        else deselectTower();
       }
       break;
     case 'GAME_OVER': {
       selectedTowerId = null;
+      towerActionsEl.style.display = 'none';
       currentState = msg.finalState;
       const w = msg.winner;
       overTitle.textContent = w === 'draw' ? 'DRAW!' : w === myId ? 'YOU WIN!' : 'YOU LOSE!';
@@ -364,6 +414,7 @@ function loop(): void {
   if (currentState) {
     renderer.draw(currentState, myId, selectedTower, hovered, selectedTowerId);
     updateHud(currentState);
+    updateTowerActions();
   }
   requestAnimationFrame(loop);
 }
@@ -386,14 +437,6 @@ ws.onStatus((status: ConnStatus) => {
     connStatus.textContent = '連線中斷，自動重新連線中…';
     setLobbyEnabled(false);
   }
-});
-
-// ── Upgrade delegation (permanent listener — survives innerHTML replacement) ──
-towerInfo.addEventListener('click', (e) => {
-  const btn = (e.target as HTMLElement).closest<HTMLElement>('.btn-upgrade');
-  if (!btn || btn.classList.contains('cant-afford')) return;
-  const towerId = btn.dataset.id;
-  if (towerId) ws.send({ type: 'UPGRADE_TOWER', towerId });
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────

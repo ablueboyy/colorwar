@@ -155,8 +155,14 @@ export function stepGame(state: GameState): void {
     const boost = boosts.get(tower.id) ?? 1;
     tower.cooldown -= boost * lm(tower).speed;
 
+    // Track the current target every tick so the turret keeps facing it,
+    // even between shots.
+    const target = findTarget(state, tower);
+    if (target) {
+      tower.aim = Math.atan2(target.y - tower.y, target.x - tower.x);
+    }
+
     if (tower.cooldown <= 0) {
-      const target = findTarget(state, tower);
       if (target) {
         fireProjectiles(state, tower, target);
         tower.cooldown = cfg.shootInterval;
