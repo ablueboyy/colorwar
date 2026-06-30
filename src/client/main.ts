@@ -95,6 +95,7 @@ function buildTowerPanel(): void {
 
 function selectTower(type: TowerType): void {
   selectedTowerId = null;
+  panelTowerId = null;
   selectedTower = type;
   document.querySelectorAll('.tower-btn').forEach(b => {
     (b as HTMLElement).classList.toggle('selected', (b as HTMLElement).dataset.type === type);
@@ -102,13 +103,23 @@ function selectTower(type: TowerType): void {
   renderTowerInfo(type);
 }
 
+// Tracks what the upgrade panel currently shows, so per-tick STATE updates
+// only touch the volatile values (HP / afford state) instead of rebuilding the
+// whole panel — rebuilding innerHTML 20x/sec destroys the button mid-click.
+let panelTowerId: string | null = null;
+let panelLevel = -1;
+
 function renderSelectedTowerInfo(tower: Tower): void {
+  // Same tower + same level → just refresh volatile bits in place.
+  if (tower.id === panelTowerId && tower.level === panelLevel) {
+    updateSelectedTowerVolatile(tower);
+    return;
+  }
+
   const cfg = TOWER_CONFIGS[tower.type];
   const m = LEVEL_MULTS[tower.level - 1];
   const upgCost = Math.floor(cfg.cost * UPGRADE_COST_RATIO);
   const canUp = tower.level < MAX_TOWER_LEVEL;
-  const money = myId ? (currentState?.players[myId].money ?? 0) : 0;
-  const canAfford = money >= upgCost;
   const nextM = canUp ? LEVEL_MULTS[tower.level] : null;
 
   towerInfo.innerHTML = `
@@ -117,7 +128,7 @@ function renderSelectedTowerInfo(tower: Tower): void {
       <span class="ti-name">${cfg.label}</span>
       <span class="ti-role" style="background:#22c55e;color:#052e16">Lv.${tower.level}</span>
       ${canUp
-        ? `<button class="btn-upgrade${canAfford ? '' : ' cant-afford'}" data-id="${tower.id}">升級 $${upgCost}</button>`
+        ? `<button class="btn-upgrade" data-id="${tower.id}">升級 $${upgCost}</button>`
         : `<span style="color:#fbbf24;font-size:0.7rem;margin-left:auto;letter-spacing:2px">MAX</span>`
       }
     </div>
@@ -126,11 +137,26 @@ function renderSelectedTowerInfo(tower: Tower): void {
       ${nextM ? `<span style="color:#334155"> → Lv.${tower.level + 1}: 範圍×${nextM.range.toFixed(1)} 射速×${nextM.speed.toFixed(1)} 傷害×${nextM.dmg.toFixed(1)}</span>` : ''}
     </div>
     <div class="ti-stats">
-      <div class="ti-stat"><span class="lab">HP</span><span class="bars">${Math.floor(tower.hp)} / ${tower.maxHp}</span></div>
+      <div class="ti-stat"><span class="lab">HP</span><span class="bars" id="sel-hp">${Math.floor(tower.hp)} / ${tower.maxHp}</span></div>
       <div class="ti-stat"><span class="lab">等級</span><span class="bars">${'★'.repeat(tower.level)}${'<span class="empty">★</span>'.repeat(MAX_TOWER_LEVEL - tower.level)}</span></div>
       <div class="ti-stat"><span class="lab">類型</span><span class="bars">${cfg.role}</span></div>
     </div>`;
 
+  panelTowerId = tower.id;
+  panelLevel = tower.level;
+  updateSelectedTowerVolatile(tower);
+}
+
+function updateSelectedTowerVolatile(tower: Tower): void {
+  const hpEl = document.getElementById('sel-hp');
+  if (hpEl) hpEl.textContent = `${Math.floor(tower.hp)} / ${tower.maxHp}`;
+
+  const btn = towerInfo.querySelector<HTMLButtonElement>('.btn-upgrade');
+  if (btn) {
+    const upgCost = Math.floor(TOWER_CONFIGS[tower.type].cost * UPGRADE_COST_RATIO);
+    const money = myId ? (currentState?.players[myId].money ?? 0) : 0;
+    btn.classList.toggle('cant-afford', money < upgCost);
+  }
 }
 
 function bars(value: number, max: number): string {

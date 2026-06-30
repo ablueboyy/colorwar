@@ -188,13 +188,14 @@ export function stepGame(state: GameState): void {
     const cy = Math.floor(proj.y);
     if (cx < 0 || cx >= BOARD_WIDTH || cy < 0 || cy >= BOARD_HEIGHT) continue;
 
-    // Check enemy tower collision
+    // Check enemy tower collision — a living enemy tower shields its cell;
+    // the cell can only be captured by the shot that destroys the tower.
     const hitIdx = state.towers.findIndex(t => t.x === cx && t.y === cy && t.owner !== proj.owner);
     if (hitIdx !== -1) {
       const hit = state.towers[hitIdx];
       hit.hp -= proj.towerDamage;
       if (hit.hp <= 0) {
-        state.board[hit.y][hit.x] = 'neutral';
+        state.board[hit.y][hit.x] = proj.owner; // destroyed → attacker captures the ground
         state.towers.splice(hitIdx, 1);
       }
       dead.add(proj.id);
@@ -213,14 +214,15 @@ export function stepGame(state: GameState): void {
           if (Math.hypot(dx, dy) > proj.splashRadius) continue;
           const nx = cx + dx, ny = cy + dy;
           if (nx < 0 || nx >= BOARD_WIDTH || ny < 0 || ny >= BOARD_HEIGHT) continue;
-          // Damage enemy towers in splash radius
+          // Living enemy tower on this cell: damage it, capture only if it dies.
           const ei = state.towers.findIndex(t => t.x === nx && t.y === ny && t.owner !== proj.owner);
           if (ei !== -1) {
             state.towers[ei].hp -= proj.towerDamage * 0.6;
             if (state.towers[ei].hp <= 0) {
-              state.board[state.towers[ei].y][state.towers[ei].x] = 'neutral';
+              state.board[ny][nx] = proj.owner; // destroyed → capture the ground
               state.towers.splice(ei, 1);
             }
+            continue; // tower still standing (or just captured) — don't paint over a shielded cell
           }
           if (state.board[ny][nx] !== proj.owner) {
             state.board[ny][nx] = proj.owner;
