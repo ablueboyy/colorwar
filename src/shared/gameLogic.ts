@@ -2,7 +2,7 @@ import type { GameState, Tower, Projectile, Barrier, PlayerId, CellColor } from 
 import {
   BOARD_WIDTH, BOARD_HEIGHT, TICK_RATE, GAME_DURATION, KO_THRESHOLD,
   BASE_INCOME_PER_SECOND, CELL_INCOME_PER_SECOND, CELL_INCOME_CAP,
-  INITIAL_P1_COLS, INITIAL_P2_COLS, STARTING_MONEY, TOWER_CONFIGS, LEVEL_MULTS,
+  INITIAL_P1_COLS, INITIAL_P2_COLS, STARTING_MONEY, TOWER_CONFIGS, LEVEL_MULTS, MAX_TOWER_LEVEL,
 } from './config';
 
 let nextId = 0;
@@ -47,16 +47,27 @@ function findTarget(
   const range = cfg.range * lm(tower).range;
   const tx = tower.x, ty = tower.y;
 
-  // Sniper prefers enemy towers
+  // Sniper prefers enemy towers, and is taunted toward enemy decoys first.
   if (tower.type === 'sniper') {
-    let best: Tower | null = null;
-    let bestDist = Infinity;
+    let best: Tower | null = null, bestDist = Infinity;
+    let decoy: Tower | null = null, decoyDist = Infinity;
     for (const t of state.towers) {
       if (t.owner === tower.owner) continue;
       const d = Math.hypot(t.x - tx, t.y - ty);
-      if (d <= range && d < bestDist) { bestDist = d; best = t; }
+      if (d > range) continue;
+      if (d < bestDist) { bestDist = d; best = t; }
+      if (TOWER_CONFIGS[t.type].decoy && d < decoyDist) { decoyDist = d; decoy = t; }
     }
-    if (best) return { x: best.x, y: best.y };
+    const pick = decoy ?? best;
+    if (pick) return { x: pick.x, y: pick.y };
+  }
+
+  // Jammer lobs at a random enemy tower in range (to slow clusters).
+  if (tower.type === 'jammer') {
+    const enemies = state.towers.filter(t => t.owner !== tower.owner && Math.hypot(t.x - tx, t.y - ty) <= range);
+    if (enemies.length === 0) return null;
+    const e = enemies[Math.floor(Math.random() * enemies.length)];
+    return { x: e.x, y: e.y };
   }
 
   // Flak lobs onto a RANDOM reachable cell, preferring enemy ground over
@@ -132,26 +143,85 @@ function fireProjectiles(state: GameState, tower: Tower, target: { x: number; y:
 
 // Splash detonation: paint cells in radius, damage enemy towers, and capture a
 // tower's cell only when the blast destroys it (living towers shield their
-// ground). Shared by 範圍砲/榴彈砲 direct hits and 高射砲 lobbed shells.
-function explodeSplash(state: GameState, cx: number, cy: number, proj: Projectile): void {
-  const sr = Math.ceil(proj.splashRadius);
+// ground). Shared by 範圍砲/榴彈砲 direct hits, 高射砲 lobbed shells, 獻祭砲
+// nuke and the 炸彈 airstrike.
+export function explodeSplash(
+  state: GameState, cx: number, cy: number,
+  owner: PlayerId, towerDamage: number, splashRadius: number,
+): void {
+  const sr = Math.ceil(splashRadius);
   for (let dy = -sr; dy <= sr; dy++) {
     for (let dx = -sr; dx <= sr; dx++) {
-      if (Math.hypot(dx, dy) > proj.splashRadius) continue;
+      if (Math.hypot(dx, dy) > splashRadius) continue;
       const nx = cx + dx, ny = cy + dy;
       if (nx < 0 || nx >= BOARD_WIDTH || ny < 0 || ny >= BOARD_HEIGHT) continue;
-      const ei = state.towers.findIndex(t => t.x === nx && t.y === ny && t.owner !== proj.owner);
+      const ei = state.towers.findIndex(t => t.x === nx && t.y === ny && t.owner !== owner);
       if (ei !== -1) {
-        state.towers[ei].hp -= proj.towerDamage * 0.6;
+        state.towers[ei].hp -= towerDamage * 0.6;
         if (state.towers[ei].hp <= 0) {
-          state.board[ny][nx] = proj.owner;
+          state.board[ny][nx] = owner;
           state.towers.splice(ei, 1);
         }
         continue;
       }
-      if (state.board[ny][nx] !== proj.owner) state.board[ny][nx] = proj.owner;
+      if (state.board[ny][nx] !== owner) state.board[ny][nx] = owner;
     }
   }
+}
+
+// 干擾砲: lobbed shell that, on landing, slows enemy towers in the blast area.
+function applyJammer(state: GameState, cx: number, cy: number, proj: Projectile): void {
+  const cfg = TOWER_CONFIGS[proj.towerType];
+  const dur = cfg.slowDuration ?? 60;
+  const sr = Math.ceil(proj.splashRadius);
+  for (const t of state.towers) {
+    if (t.owner === proj.owner) continue;
+    if (Math.abs(t.x - cx) > sr || Math.abs(t.y - cy) > sr) continue;
+    if (Math.hypot(t.x - cx, t.y - cy) <= proj.splashRadius) t.slow = Math.max(t.slow, dur);
+  }
+}
+
+// Create a tower (used by 召喚塔 spawns).
+function makeTower(owner: PlayerId, type: Tower['type'], x: number, y: number): Tower {
+  const cfg = TOWER_CONFIGS[type];
+  return {
+    id: uid(), owner, type, x, y,
+    hp: cfg.maxHp, maxHp: cfg.maxHp,
+    cooldown: 0, active: true, level: 1, aim: -Math.PI / 2, slow: 0,
+  };
+}
+
+// 章魚砲: one bullet in each of the 8 directions.
+function fireOctopus(state: GameState, tower: Tower): void {
+  const cfg = TOWER_CONFIGS[tower.type];
+  const speed = cfg.bulletSpeed;
+  const range = cfg.range * lm(tower).range;
+  const lifetime = Math.ceil(range / speed) + 4;
+  const dmg = cfg.towerDamage * lm(tower).dmg;
+  for (let i = 0; i < 8; i++) {
+    const angle = (i * Math.PI) / 4;
+    state.projectiles.push({
+      id: uid(), owner: tower.owner, towerType: tower.type,
+      x: tower.x + 0.5, y: tower.y + 0.5,
+      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      towerDamage: dmg, splashRadius: cfg.splashRadius, lifetime,
+    });
+  }
+}
+
+// First adjacent cell owned by `tower`'s player that has no tower on it.
+function findEmptyAdjacent(state: GameState, tower: Tower): { x: number; y: number } | null {
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const x = tower.x + dx, y = tower.y + dy;
+      if (x < 0 || x >= BOARD_WIDTH || y < 0 || y >= BOARD_HEIGHT) continue;
+      if (state.board[y][x] !== tower.owner) continue;
+      if (state.towers.some(t => t.x === x && t.y === y)) continue;
+      return { x, y };
+    }
+  }
+  return null;
 }
 
 // Perimeter cells of the (2*span+1) square centred on the generator, clamped
@@ -216,14 +286,22 @@ export function stepGame(state: GameState): void {
   // 2. Tower activation + firing
   for (const tower of state.towers) {
     tower.active = state.board[tower.y]?.[tower.x] === tower.owner;
+    if (tower.slow > 0) tower.slow--; // 干擾砲 slow ticks down regardless
     const cfg = TOWER_CONFIGS[tower.type];
     if (!tower.active || cfg.shootInterval === 0) continue;
 
     const boost = boosts.get(tower.id) ?? 1;
-    tower.cooldown -= boost * lm(tower).speed;
+    const slowMul = tower.slow > 0 ? (1 - (TOWER_CONFIGS.jammer.slowFactor ?? 0.2)) : 1;
+    tower.cooldown -= boost * lm(tower).speed * slowMul;
+
+    // 章魚砲 fires radially, no aiming/targeting needed.
+    if (cfg.octopus) {
+      if (tower.cooldown <= 0) { fireOctopus(state, tower); tower.cooldown = cfg.shootInterval; }
+      continue;
+    }
 
     // Direct-fire turrets track their target every tick so they keep facing
-    // it between shots. Lob turrets (flak) pick a fresh random target only
+    // it between shots. Lob turrets (flak/jammer) pick a fresh target only
     // when they fire, otherwise the barrel would jitter every tick.
     let target = cfg.lob ? null : findTarget(state, tower);
     if (target) tower.aim = Math.atan2(target.y - tower.y, target.x - tower.x);
@@ -237,6 +315,58 @@ export function stepGame(state: GameState): void {
       } else {
         tower.cooldown = 0;
       }
+    }
+  }
+
+  // 2c. 召喚塔 spawns a basic tower on an adjacent empty own cell on a timer.
+  for (const t of [...state.towers]) { // snapshot: we push new towers below
+    const cfg = TOWER_CONFIGS[t.type];
+    if (!cfg.summonInterval || !t.active) continue;
+    if (--t.cooldown > 0) continue;
+    const spot = findEmptyAdjacent(state, t);
+    if (spot) {
+      state.towers.push(makeTower(t.owner, 'basic', spot.x, spot.y));
+      t.cooldown = cfg.summonInterval;
+    } else {
+      t.cooldown = 0; // no room — retry next tick
+    }
+  }
+
+  // 2d. 附魔塔 upgrades a random nearby friendly tower on a timer.
+  for (const t of state.towers) {
+    const cfg = TOWER_CONFIGS[t.type];
+    if (!cfg.enchantInterval || !t.active) continue;
+    if (--t.cooldown > 0) continue;
+    const range = cfg.enchantRange ?? 3;
+    const cands = state.towers.filter(o =>
+      o.owner === t.owner && o.id !== t.id &&
+      o.level < MAX_TOWER_LEVEL && !TOWER_CONFIGS[o.type].noUpgrade &&
+      Math.hypot(o.x - t.x, o.y - t.y) <= range,
+    );
+    if (cands.length > 0) {
+      const tgt = cands[Math.floor(Math.random() * cands.length)];
+      tgt.level++;
+      const m = LEVEL_MULTS[tgt.level - 1];
+      tgt.maxHp = Math.round(TOWER_CONFIGS[tgt.type].maxHp * m.hp);
+      tgt.hp = tgt.maxHp;
+      t.cooldown = cfg.enchantInterval;
+    } else {
+      t.cooldown = 0;
+    }
+  }
+
+  // 2e. 獻祭砲: when all 8 neighbours are friendly towers, consume them and nuke.
+  for (const sac of [...state.towers]) { // snapshot: state.towers is rebuilt below
+    if (!TOWER_CONFIGS[sac.type].sacrifice || !sac.active) continue;
+    const neighbours = state.towers.filter(o =>
+      o.owner === sac.owner && o.id !== sac.id &&
+      Math.abs(o.x - sac.x) <= 1 && Math.abs(o.y - sac.y) <= 1,
+    );
+    if (neighbours.length >= 8) {
+      const ids = new Set(neighbours.slice(0, 8).map(o => o.id));
+      state.towers = state.towers.filter(o => !ids.has(o.id));
+      const cfg = TOWER_CONFIGS[sac.type];
+      explodeSplash(state, sac.x, sac.y, sac.owner, cfg.towerDamage, cfg.splashRadius);
     }
   }
 
@@ -272,6 +402,23 @@ export function stepGame(state: GameState): void {
   for (const proj of state.projectiles) {
     if (dead.has(proj.id)) continue;
 
+    // 磁力塔: redirect non-lob enemy bullets toward the nearest enemy magnet.
+    if (!proj.lob) {
+      let mg: Tower | null = null, md = Infinity;
+      for (const t of state.towers) {
+        const mr = TOWER_CONFIGS[t.type].magnetRange;
+        if (!mr || t.owner === proj.owner || !t.active) continue;
+        const d = Math.hypot((t.x + 0.5) - proj.x, (t.y + 0.5) - proj.y);
+        if (d <= mr && d < md) { md = d; mg = t; }
+      }
+      if (mg) {
+        const sp = Math.hypot(proj.vx, proj.vy);
+        const ang = Math.atan2((mg.y + 0.5) - proj.y, (mg.x + 0.5) - proj.x);
+        proj.vx = Math.cos(ang) * sp;
+        proj.vy = Math.sin(ang) * sp;
+      }
+    }
+
     proj.x += proj.vx;
     proj.y += proj.vy;
     proj.lifetime--;
@@ -290,7 +437,10 @@ export function stepGame(state: GameState): void {
       const reached = Math.hypot(proj.x - proj.tx!, proj.y - proj.ty!) <= Math.max(0.5, Math.hypot(proj.vx, proj.vy));
       if (reached || proj.lifetime <= 0) {
         const lx = Math.floor(proj.tx!), ly = Math.floor(proj.ty!);
-        if (lx >= 0 && lx < BOARD_WIDTH && ly >= 0 && ly < BOARD_HEIGHT) explodeSplash(state, lx, ly, proj);
+        if (lx >= 0 && lx < BOARD_WIDTH && ly >= 0 && ly < BOARD_HEIGHT) {
+          if (proj.towerType === 'jammer') applyJammer(state, lx, ly, proj);
+          else explodeSplash(state, lx, ly, proj.owner, proj.towerDamage, proj.splashRadius);
+        }
         dead.add(proj.id);
       }
       continue;
@@ -331,7 +481,7 @@ export function stepGame(state: GameState): void {
     if (cell === proj.owner) continue; // pass through own cells
 
     if (proj.splashRadius > 0) {
-      explodeSplash(state, cx, cy, proj);
+      explodeSplash(state, cx, cy, proj.owner, proj.towerDamage, proj.splashRadius);
       dead.add(proj.id);
     } else {
       state.board[cy][cx] = proj.owner;
@@ -347,6 +497,11 @@ export function stepGame(state: GameState): void {
     player.cells = cells;
     const cellBonus = Math.min(cells * CELL_INCOME_PER_SECOND, CELL_INCOME_CAP);
     player.money += (BASE_INCOME_PER_SECOND + cellBonus) * dt;
+  }
+  // 金錢塔: extra income while active.
+  for (const t of state.towers) {
+    const inc = TOWER_CONFIGS[t.type].incomePerSec;
+    if (inc && t.active) state.players[t.owner].money += inc * dt;
   }
 
   // 5. Win condition

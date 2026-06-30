@@ -41,10 +41,24 @@ export interface TowerConfig {
   speedBoost: number;
   healPerTick: number;
   healRange: number;
-  lob?: boolean; // shells fly over territory and detonate at the target (高射砲)
+  lob?: boolean; // shells fly over territory and detonate at the target (高射砲/干擾砲)
   wallHp?: number;    // 護牆塔: shared HP pool of the generated wall ring
   wallRegen?: number; // 護牆塔: ticks between full regenerations
   wallSpan?: number;  // 護牆塔: half-size of the square ring (2 → 5×5)
+  incomePerSec?: number; // 金錢塔: extra money/sec while active
+  slowFactor?: number;   // 干擾砲: enemy fire-rate reduction (0.2 = -20%)
+  slowDuration?: number; // 干擾砲: slow duration in ticks
+  sacrifice?: boolean;   // 獻祭砲: consume 8 neighbour towers → nuke (uses towerDamage/splashRadius)
+  active?: boolean;      // 炸彈: a click-anywhere ability, not a placed tower
+  octopus?: boolean;     // 章魚砲: fire 8 bullets radially
+  summonInterval?: number; // 召喚塔: ticks between spawning a basic tower
+  magnetRange?: number;    // 磁力塔: pulls enemy bullets within this range to itself
+  decoy?: boolean;       // 誘餌塔: enemy snipers target it first
+  banner?: boolean;      // 旗幟塔: paint a burst on placement
+  bannerRadius?: number; // 旗幟塔: burst paint radius
+  enchantInterval?: number; // 附魔塔: ticks between upgrading a random nearby ally
+  enchantRange?: number;    // 附魔塔: range for the random upgrade
+  noUpgrade?: boolean;   // tower can't be manually/auto upgraded (附魔塔)
   label: string;
   glyph: string;
   role: string;
@@ -154,5 +168,115 @@ export const TOWER_CONFIGS: Record<TowerType, TowerConfig> = {
     healPerTick: 0.5, healRange: 2.5,
     label: '維修車', glyph: '+', role: '維修補血',
     description: '不發射。持續修復周圍友方砲台的血量，讓前線砲台更耐打。',
+  },
+  money: {
+    cost: 120, maxHp: 60,
+    shootInterval: 0, range: 0, bulletSpeed: 0,
+    towerDamage: 0, splashRadius: 0,
+    spreadCount: 0, spreadAngleDeg: 0,
+    supportRange: 0, speedBoost: 0,
+    healPerTick: 0, healRange: 0,
+    incomePerSec: 6,
+    label: '金錢塔', glyph: '$', role: '經濟生產',
+    description: '不發射。運作時每秒額外產出 $6，約 20 秒回本。血薄，要放在後方保護。',
+  },
+  jammer: {
+    cost: 180, maxHp: 60,
+    shootInterval: 300, range: 14, bulletSpeed: 0.4,
+    towerDamage: 0, splashRadius: 1.8,
+    spreadCount: 1, spreadAngleDeg: 0,
+    supportRange: 0, speedBoost: 0,
+    healPerTick: 0, healRange: 0,
+    lob: true, slowFactor: 0.2, slowDuration: 60,
+    label: '干擾砲', glyph: 'J', role: '投射干擾',
+    description: '拋射越頂干擾彈，落點 3×3 使敵方砲台射速 -20% 持續 3 秒。自身 15 秒一發、不造成傷害，無法全場覆蓋。',
+  },
+  sacrifice: {
+    cost: 60, maxHp: 70,
+    shootInterval: 0, range: 0, bulletSpeed: 0,
+    towerDamage: 120, splashRadius: 4,
+    spreadCount: 0, spreadAngleDeg: 0,
+    supportRange: 0, speedBoost: 0,
+    healPerTick: 0, healRange: 0,
+    sacrifice: true,
+    label: '獻祭砲', glyph: 'X', role: '犧牲爆發',
+    description: '當八個相鄰格都是己方砲台時，吞噬這 8 座砲台，原地引爆超大範圍核爆（範圍4、拆塔120）。超便宜，建議搭配基礎砲當祭品。',
+  },
+  bomb: {
+    cost: 70, maxHp: 0,
+    shootInterval: 0, range: 0, bulletSpeed: 0,
+    towerDamage: 25, splashRadius: 1.5,
+    spreadCount: 0, spreadAngleDeg: 0,
+    supportRange: 0, speedBoost: 0,
+    healPerTick: 0, healRange: 0,
+    active: true,
+    label: '炸彈', glyph: '*', role: '主動空襲',
+    description: '主動技：選取後可點地圖上「任意」格子，花 $70 立即在該處 3×3 造成小額傷害與染色。不佔格、無實體。',
+  },
+  octopus: {
+    cost: 110, maxHp: 60,
+    shootInterval: 55, range: 5, bulletSpeed: 0.45,
+    towerDamage: 8, splashRadius: 0,
+    spreadCount: 1, spreadAngleDeg: 0,
+    supportRange: 0, speedBoost: 0,
+    healPerTick: 0, healRange: 0,
+    octopus: true,
+    label: '章魚砲', glyph: 'O', role: '八方齊射',
+    description: '一次朝八個方向各射一發染色彈，自衛與鋪面兼具，但每個方向火力都不強。',
+  },
+  summon: {
+    cost: 160, maxHp: 90,
+    shootInterval: 0, range: 0, bulletSpeed: 0,
+    towerDamage: 0, splashRadius: 0,
+    spreadCount: 0, spreadAngleDeg: 0,
+    supportRange: 0, speedBoost: 0,
+    healPerTick: 0, healRange: 0,
+    summonInterval: 160,
+    label: '召喚塔', glyph: 'M', role: '召喚增援',
+    description: '不攻擊。每 8 秒在旁邊的己方空格召喚一座基礎砲，慢慢鋪出砲海。本體被拆就停止召喚。',
+  },
+  magnet: {
+    cost: 130, maxHp: 200,
+    shootInterval: 0, range: 0, bulletSpeed: 0,
+    towerDamage: 0, splashRadius: 0,
+    spreadCount: 0, spreadAngleDeg: 0,
+    supportRange: 0, speedBoost: 0,
+    healPerTick: 0, healRange: 0,
+    magnetRange: 4,
+    label: '磁力塔', glyph: 'G', role: '吸引肉盾',
+    description: '不發射。把附近飛來的敵方子彈吸到自己身上，當肉盾保護後排砲台。高血量，搭配維修車超耐。',
+  },
+  decoy: {
+    cost: 40, maxHp: 180,
+    shootInterval: 0, range: 0, bulletSpeed: 0,
+    towerDamage: 0, splashRadius: 0,
+    spreadCount: 0, spreadAngleDeg: 0,
+    supportRange: 0, speedBoost: 0,
+    healPerTick: 0, healRange: 0,
+    decoy: true,
+    label: '誘餌塔', glyph: 'D', role: '嘲諷誘餌',
+    description: '不發射。便宜又高血，敵方狙擊砲會優先打它，幫真正的砲台吸火。',
+  },
+  banner: {
+    cost: 90, maxHp: 150,
+    shootInterval: 0, range: 0, bulletSpeed: 0,
+    towerDamage: 0, splashRadius: 0,
+    spreadCount: 0, spreadAngleDeg: 0,
+    supportRange: 0, speedBoost: 0,
+    healPerTick: 0, healRange: 0,
+    banner: true, bannerRadius: 2,
+    label: '旗幟塔', glyph: 'P', role: '爆發搶地',
+    description: '放下的瞬間把周圍半徑 2 一次染成己色，之後變成幾乎無用的高血肉盾。適合搶中線或突進。',
+  },
+  enchant: {
+    cost: 170, maxHp: 90,
+    shootInterval: 0, range: 0, bulletSpeed: 0,
+    towerDamage: 0, splashRadius: 0,
+    spreadCount: 0, spreadAngleDeg: 0,
+    supportRange: 0, speedBoost: 0,
+    healPerTick: 0, healRange: 0,
+    enchantInterval: 200, enchantRange: 3, noUpgrade: true,
+    label: '附魔塔', glyph: 'E', role: '隨機強化',
+    description: '不攻擊。每 10 秒隨機把周圍一座友方砲台升一級。自身無法被升級，需要保護。',
   },
 };

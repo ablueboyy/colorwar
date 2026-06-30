@@ -1,6 +1,6 @@
 import { WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage, PlayerId, TowerType } from '../shared/types';
-import { createInitialState, stepGame } from '../shared/gameLogic';
+import { createInitialState, stepGame, explodeSplash } from '../shared/gameLogic';
 import { BOARD_WIDTH, BOARD_HEIGHT, TICK_INTERVAL_MS, TOWER_CONFIGS, SELL_REFUND_RATIO, LEVEL_MULTS, UPGRADE_COST_RATIO, MAX_TOWER_LEVEL, LOADOUT_SIZE } from '../shared/config';
 
 interface PlayerConn {
@@ -50,16 +50,18 @@ export class Room {
     if (msg.type === 'PLACE_TOWER') this.placeTower(player.id, msg.towerType, msg.x, msg.y);
     else if (msg.type === 'SELL_TOWER') this.sellTower(player.id, msg.towerId);
     else if (msg.type === 'UPGRADE_TOWER') this.upgradeTower(player.id, msg.towerId);
+    else if (msg.type === 'BOMB') this.bomb(player.id, msg.x, msg.y);
   }
 
   private placeTower(pid: PlayerId, type: TowerType, x: number, y: number): void {
     const s = this.state;
     const conn = this.players.find(p => p.id === pid);
     if (!conn || !conn.loadout.includes(type)) return; // only towers in this player's loadout
+    const cfg = TOWER_CONFIGS[type];
+    if (cfg.active) return; // active abilities (炸彈) aren't placed as towers
     if (x < 0 || x >= BOARD_WIDTH || y < 0 || y >= BOARD_HEIGHT) return;
     if (s.board[y][x] !== pid) return;
     if (s.towers.some(t => t.x === x && t.y === y)) return;
-    const cfg = TOWER_CONFIGS[type];
     if (s.players[pid].money < cfg.cost) return;
 
     s.players[pid].money -= cfg.cost;
@@ -69,12 +71,39 @@ export class Room {
       hp: cfg.maxHp, maxHp: cfg.maxHp,
       cooldown: 0, active: true, level: 1,
       aim: -Math.PI / 2, // start pointing up; offensive towers snap to target on first tick
+      slow: 0,
     });
+
+    // 旗幟塔: one-time burst that paints a radius around the placement.
+    if (cfg.banner) {
+      const rad = cfg.bannerRadius ?? 2;
+      for (let dy = -rad; dy <= rad; dy++) {
+        for (let dx = -rad; dx <= rad; dx++) {
+          if (Math.hypot(dx, dy) > rad) continue;
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || nx >= BOARD_WIDTH || ny < 0 || ny >= BOARD_HEIGHT) continue;
+          if (s.towers.some(t => t.x === nx && t.y === ny && t.owner !== pid)) continue; // enemy towers shield their cell
+          s.board[ny][nx] = pid;
+        }
+      }
+    }
+  }
+
+  private bomb(pid: PlayerId, x: number, y: number): void {
+    const s = this.state;
+    const conn = this.players.find(p => p.id === pid);
+    if (!conn || !conn.loadout.includes('bomb')) return;
+    if (x < 0 || x >= BOARD_WIDTH || y < 0 || y >= BOARD_HEIGHT) return;
+    const cfg = TOWER_CONFIGS.bomb;
+    if (s.players[pid].money < cfg.cost) return;
+    s.players[pid].money -= cfg.cost;
+    explodeSplash(s, x, y, pid, cfg.towerDamage, cfg.splashRadius);
   }
 
   private upgradeTower(pid: PlayerId, towerId: string): void {
     const tower = this.state.towers.find(t => t.id === towerId && t.owner === pid);
     if (!tower || tower.level >= MAX_TOWER_LEVEL) return;
+    if (TOWER_CONFIGS[tower.type].noUpgrade) return; // 附魔塔 can't be upgraded
     const cfg = TOWER_CONFIGS[tower.type];
     const cost = Math.floor(cfg.cost * UPGRADE_COST_RATIO);
     if (this.state.players[pid].money < cost) return;

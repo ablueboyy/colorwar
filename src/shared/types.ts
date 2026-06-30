@@ -3,7 +3,9 @@ export type CellColor = 'neutral' | PlayerId;
 export type TowerType =
   | 'basic' | 'rapid' | 'spread' | 'sniper'
   | 'artillery' | 'splash' | 'flak' | 'wallgen'
-  | 'support' | 'repair';
+  | 'support' | 'repair'
+  | 'money' | 'jammer' | 'sacrifice' | 'bomb' | 'octopus'
+  | 'summon' | 'magnet' | 'decoy' | 'banner' | 'enchant';
 export type GamePhase = 'waiting' | 'playing' | 'ended';
 
 export interface Tower {
@@ -18,6 +20,7 @@ export interface Tower {
   active: boolean;
   level: number;
   aim: number; // radians, atan2(dy,dx) toward current target; sprite's natural orientation is "up"
+  slow: number; // ticks of remaining fire-rate slow (干擾砲); 0 = normal
 }
 
 export interface Projectile {
@@ -72,7 +75,8 @@ export type ClientMessage =
   | { type: 'JOIN_ROOM'; code: string; loadout: TowerType[] }
   | { type: 'PLACE_TOWER'; towerType: TowerType; x: number; y: number }
   | { type: 'SELL_TOWER'; towerId: string }
-  | { type: 'UPGRADE_TOWER'; towerId: string };
+  | { type: 'UPGRADE_TOWER'; towerId: string }
+  | { type: 'BOMB'; x: number; y: number };
 
 export type ServerMessage =
   | { type: 'ROOM_CREATED'; code: string; playerId: PlayerId }

@@ -112,8 +112,8 @@ export class Renderer {
     // Hover placement preview
     if (hovered && myId && selectedTower) {
       const { x, y } = hovered;
-      const canPlace = state.board[y]?.[x] === myId
-        && !state.towers.some(t => t.x === x && t.y === y);
+      const canPlace = TOWER_CONFIGS[selectedTower].active // 炸彈 lands anywhere
+        || (state.board[y]?.[x] === myId && !state.towers.some(t => t.x === x && t.y === y));
       ctx.strokeStyle = canPlace ? '#facc15' : '#ef4444';
       ctx.lineWidth = 2;
       ctx.strokeRect(x * S + 1, y * S + 1, S - 2, S - 2);
@@ -156,9 +156,10 @@ export class Renderer {
       const mid  = !active ? '#4a5568' : p1 ? '#2563eb' : '#dc2626';
       const lite = !active ? '#718096' : p1 ? '#93c5fd' : '#fca5a5';
 
-      // Only towers that actually fire rotate to face their aim; walls,
-      // support and repair stay upright. UI overlays never rotate.
-      const rotates = TOWER_CONFIGS[tower.type].shootInterval > 0;
+      // Aimed turrets rotate to face their target; radial (章魚砲) and
+      // non-firing towers stay upright. UI overlays never rotate.
+      const tcfg = TOWER_CONFIGS[tower.type];
+      const rotates = tcfg.shootInterval > 0 && !tcfg.octopus;
       ctx.save();
       if (rotates) {
         const ang = this.smoothAngle(tower.id, tower.aim);
@@ -365,6 +366,133 @@ export class Renderer {
         r(10, 10, 10, 10, mid);
         r(12, 12, 6, 6, lite);    // emitter lens
         r(13, 13, 4, 4, '#f8fafc');
+        break;
+      }
+      case 'money': {
+        // Gold coin with a $ sign
+        ctx.beginPath(); ctx.arc(15, 15, 11, 0, Math.PI * 2);
+        ctx.fillStyle = '#b45309'; ctx.fill();
+        ctx.beginPath(); ctx.arc(15, 15, 9, 0, Math.PI * 2);
+        ctx.fillStyle = '#fbbf24'; ctx.fill();
+        ctx.beginPath(); ctx.arc(15, 15, 9, 0, Math.PI * 2);
+        ctx.strokeStyle = '#fde68a'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.fillStyle = '#92400e';
+        ctx.font = 'bold 14px monospace';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('$', 15, 16);
+        break;
+      }
+      case 'jammer': {
+        // Tilted radar dish on a base
+        r(9, 18, 12, 6, dark);
+        r(10, 19, 10, 4, mid);
+        ctx.save();
+        ctx.translate(15, 13); ctx.rotate(-0.5);
+        ctx.beginPath(); ctx.ellipse(0, 0, 9, 5, 0, 0, Math.PI * 2);
+        ctx.fillStyle = GD; ctx.fill();
+        ctx.beginPath(); ctx.ellipse(0, 0, 7, 3.5, 0, 0, Math.PI * 2);
+        ctx.fillStyle = GL; ctx.fill();
+        ctx.restore();
+        r(14, 11, 2, 8, GM); // mast
+        break;
+      }
+      case 'sacrifice': {
+        // Dark altar with a glowing red core + spikes
+        r(6, 14, 18, 10, dark);
+        r(7, 15, 16, 8, mid);
+        r(8, 10, 3, 5, GD); r(13, 8, 3, 7, GD); r(19, 10, 3, 5, GD); // spikes
+        ctx.beginPath(); ctx.arc(15, 17, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#7f1d1d'; ctx.fill();
+        ctx.beginPath(); ctx.arc(15, 17, 3, 0, Math.PI * 2);
+        ctx.fillStyle = '#ef4444'; ctx.fill();
+        ctx.beginPath(); ctx.arc(15, 17, 1.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#fecaca'; ctx.fill();
+        break;
+      }
+      case 'octopus': {
+        // Central hub with 8 short barrels
+        for (let i = 0; i < 8; i++) {
+          const a = (i * Math.PI) / 4;
+          const bx = 15 + Math.cos(a) * 9, by = 15 + Math.sin(a) * 9;
+          ctx.save(); ctx.translate(bx, by); ctx.rotate(a);
+          r(-1.5, -2, 5, 4, GD);
+          ctx.restore();
+        }
+        ctx.beginPath(); ctx.arc(15, 15, 7, 0, Math.PI * 2);
+        ctx.fillStyle = dark; ctx.fill();
+        ctx.beginPath(); ctx.arc(15, 15, 5, 0, Math.PI * 2);
+        ctx.fillStyle = mid; ctx.fill();
+        ctx.beginPath(); ctx.arc(15, 15, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = lite; ctx.fill();
+        break;
+      }
+      case 'summon': {
+        // Portal: rings with an up-arrow
+        r(6, 6, 18, 18, dark);
+        r(7, 7, 16, 16, mid);
+        ctx.beginPath(); ctx.arc(15, 15, 7, 0, Math.PI * 2);
+        ctx.strokeStyle = lite; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = '#f8fafc';
+        ctx.beginPath();
+        ctx.moveTo(15, 9); ctx.lineTo(20, 16); ctx.lineTo(16.5, 16);
+        ctx.lineTo(16.5, 21); ctx.lineTo(13.5, 21); ctx.lineTo(13.5, 16);
+        ctx.lineTo(10, 16); ctx.closePath(); ctx.fill();
+        break;
+      }
+      case 'magnet': {
+        // Horseshoe magnet (U shape) with red/grey poles
+        ctx.fillStyle = '#dc2626';
+        ctx.fillRect(6, 6, 6, 14);
+        ctx.fillRect(18, 6, 6, 14);
+        ctx.fillStyle = '#e5e7eb';
+        ctx.fillRect(6, 6, 6, 5);
+        ctx.fillRect(18, 6, 6, 5);
+        ctx.fillStyle = '#dc2626';
+        ctx.fillRect(6, 17, 18, 7); // bottom curve (blocky)
+        ctx.fillStyle = '#7f1d1d';
+        ctx.fillRect(12, 11, 6, 9); // inner gap shadow
+        ctx.fillStyle = dark;
+        ctx.fillRect(12, 12, 6, 8);
+        break;
+      }
+      case 'decoy': {
+        // Bullseye target dummy
+        ctx.beginPath(); ctx.arc(15, 15, 11, 0, Math.PI * 2);
+        ctx.fillStyle = '#e5e7eb'; ctx.fill();
+        ctx.beginPath(); ctx.arc(15, 15, 8, 0, Math.PI * 2);
+        ctx.fillStyle = '#ef4444'; ctx.fill();
+        ctx.beginPath(); ctx.arc(15, 15, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#e5e7eb'; ctx.fill();
+        ctx.beginPath(); ctx.arc(15, 15, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#ef4444'; ctx.fill();
+        break;
+      }
+      case 'banner': {
+        // Flag on a pole
+        r(8, 4, 2, 22, GL);     // pole
+        ctx.beginPath();
+        ctx.moveTo(10, 5); ctx.lineTo(24, 8); ctx.lineTo(10, 14);
+        ctx.closePath();
+        ctx.fillStyle = mid; ctx.fill();
+        ctx.strokeStyle = lite; ctx.lineWidth = 1; ctx.stroke();
+        r(7, 24, 4, 3, dark);   // base
+        break;
+      }
+      case 'enchant': {
+        // Magic crystal with sparkle
+        ctx.fillStyle = dark;
+        ctx.beginPath();
+        ctx.moveTo(15, 3); ctx.lineTo(23, 14); ctx.lineTo(15, 26);
+        ctx.lineTo(7, 14); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = mid;
+        ctx.beginPath();
+        ctx.moveTo(15, 6); ctx.lineTo(20, 14); ctx.lineTo(15, 23);
+        ctx.lineTo(10, 14); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = lite;
+        ctx.beginPath();
+        ctx.moveTo(15, 6); ctx.lineTo(17, 14); ctx.lineTo(15, 14);
+        ctx.closePath(); ctx.fill();
+        r(14, 9, 2, 2, '#f8fafc'); // sparkle
         break;
       }
       case 'support': {

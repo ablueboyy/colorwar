@@ -38,7 +38,8 @@ const STAT_MAX = {
   hp: Math.max(...TOWER_ENTRIES.map(([, c]) => c.maxHp)),
   range: Math.max(...TOWER_ENTRIES.map(([, c]) => Math.max(c.range, c.supportRange, c.healRange))),
   speed: Math.max(...TOWER_ENTRIES.map(([, c]) => (c.shootInterval > 0 ? 1 / c.shootInterval : 0))),
-  dmg: Math.max(...TOWER_ENTRIES.map(([, c]) => c.towerDamage)),
+  // Exclude 獻祭砲's nuke and 炸彈 — they aren't normal attacks and would skew the bars.
+  dmg: Math.max(...TOWER_ENTRIES.filter(([, c]) => !c.sacrifice && !c.active).map(([, c]) => c.towerDamage)),
 };
 
 const overTitle = document.getElementById('over-title')!;
@@ -115,7 +116,17 @@ function toggleLoadout(type: TowerType): void {
 // Shared special-ability description, used by both the lobby detail panel and
 // the in-game tower info panel.
 function specialText(c: (typeof TOWER_CONFIGS)[TowerType]): string {
+  if (c.active) return '主動技：點任意格投彈';
+  if (c.slowDuration) return `落點敵塔降速 ${Math.round((c.slowFactor ?? 0.2) * 100)}%／${c.slowDuration / TICK_RATE} 秒`;
   if (c.lob) return '越頂拋射、隨機砸落';
+  if (c.sacrifice) return '吞噬周圍 8 塔 → 核爆';
+  if (c.octopus) return '八方向齊射';
+  if (c.summonInterval) return `每 ${c.summonInterval / TICK_RATE} 秒召喚基礎砲`;
+  if (c.magnetRange) return '吸附附近敵方子彈';
+  if (c.decoy) return '嘲諷：吸引敵方狙擊';
+  if (c.banner) return '放置時爆發染色一圈';
+  if (c.enchantInterval) return `每 ${c.enchantInterval / TICK_RATE} 秒隨機升級友軍`;
+  if (c.incomePerSec) return `運作時每秒 +$${c.incomePerSec}`;
   if (c.wallHp) return '5×5 護牆，破壞後 15 秒重建';
   if (c.spreadCount > 1) return `扇形 ${c.spreadCount} 連發`;
   if (c.splashRadius > 0) return '範圍爆炸染色';
@@ -354,6 +365,7 @@ canvas.addEventListener('mousemove', (e) => {
   else hovered = null;
 
   if (!currentState || !myId || !selectedTower) { canvas.style.cursor = 'default'; return; }
+  if (TOWER_CONFIGS[selectedTower].active) { canvas.style.cursor = 'crosshair'; return; } // 炸彈 anywhere
   const state = currentState;
   const canPlace = state.board[y]?.[x] === myId && !state.towers.some(t => t.x === x && t.y === y);
   canvas.style.cursor = canPlace ? 'crosshair' : 'default';
@@ -365,6 +377,12 @@ canvas.addEventListener('click', (e) => {
   if (!currentState || !myId) return;
   const { x, y } = getCell(e);
   if (x < 0 || x >= 24 || y < 0 || y >= 16) return;
+
+  // 炸彈 (active ability): click any cell to drop it.
+  if (selectedTower && TOWER_CONFIGS[selectedTower].active) {
+    ws.send({ type: 'BOMB', x, y });
+    return;
+  }
 
   const hitTower = currentState.towers.find(t => t.x === x && t.y === y && t.owner === myId);
   if (hitTower) {
