@@ -2,7 +2,7 @@ export type PlayerId = 'p1' | 'p2';
 export type CellColor = 'neutral' | PlayerId;
 export type TowerType =
   | 'basic' | 'rapid' | 'spread' | 'sniper'
-  | 'artillery' | 'splash' | 'flak' | 'wall'
+  | 'artillery' | 'splash' | 'flak' | 'wallgen'
   | 'support' | 'repair';
 export type GamePhase = 'waiting' | 'playing' | 'ended';
 
@@ -43,10 +43,23 @@ export interface PlayerState {
   cells: number;
 }
 
+// A protective wall ring spawned by a 護牆塔 (wallgen). Shares one HP pool;
+// when hp hits 0 the ring vanishes (cells emptied) until the next regen tick.
+export interface Barrier {
+  id: string;
+  owner: PlayerId;
+  ownerId: string; // generator tower id
+  cells: { x: number; y: number }[];
+  hp: number;
+  maxHp: number;
+  regen: number; // ticks until next full regeneration
+}
+
 export interface GameState {
   board: CellColor[][];
   towers: Tower[];
   projectiles: Projectile[];
+  barriers: Barrier[];
   players: { p1: PlayerState; p2: PlayerState };
   tick: number;
   timeLeft: number;

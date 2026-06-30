@@ -31,10 +31,8 @@ const sellHint = document.getElementById('sell-hint')!;
 
 // Pre-compute stat maxima across all towers for the rating bars
 const TOWER_ENTRIES = Object.entries(TOWER_CONFIGS) as [TowerType, (typeof TOWER_CONFIGS)[TowerType]][];
-// The wall's huge HP is an outlier; exclude it so combat-tower bars stay comparable.
-const HP_ENTRIES = TOWER_ENTRIES.filter(([t]) => t !== 'wall');
 const STAT_MAX = {
-  hp: Math.max(...HP_ENTRIES.map(([, c]) => c.maxHp)),
+  hp: Math.max(...TOWER_ENTRIES.map(([, c]) => c.maxHp)),
   range: Math.max(...TOWER_ENTRIES.map(([, c]) => Math.max(c.range, c.supportRange, c.healRange))),
   speed: Math.max(...TOWER_ENTRIES.map(([, c]) => (c.shootInterval > 0 ? 1 / c.shootInterval : 0))),
   dmg: Math.max(...TOWER_ENTRIES.map(([, c]) => c.towerDamage)),
@@ -221,12 +219,12 @@ function renderTowerInfo(type: TowerType): void {
   const dmgBars = c.towerDamage > 0 ? bars(c.towerDamage, STAT_MAX.dmg) : '<span class="empty">●●●●●</span>';
 
   let special: string;
-  if (c.lob) special = '越頂拋射、直擊後排';
+  if (c.lob) special = '越頂拋射、隨機砸落';
+  else if (c.wallHp) special = '每 10 秒生成 5×5 護牆';
   else if (c.spreadCount > 1) special = `扇形 ${c.spreadCount} 連發`;
   else if (c.splashRadius > 0) special = '範圍爆炸染色';
   else if (c.speedBoost > 0) special = `周圍友軍射速 +${Math.round(c.speedBoost * 100)}%`;
   else if (c.healPerTick > 0) special = '持續修復周圍友軍血量';
-  else if (c.shootInterval === 0) special = '阻擋敵方子彈的防禦牆';
   else special = '單發單格染色';
 
   towerInfo.innerHTML = `

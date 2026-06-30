@@ -1,4 +1,4 @@
-import type { GameState, Tower, Projectile, PlayerId, CellColor } from './types';
+import type { GameState, Tower, Projectile, Barrier, PlayerId, CellColor } from './types';
 import {
   BOARD_WIDTH, BOARD_HEIGHT, TICK_RATE, GAME_DURATION, KO_THRESHOLD,
   BASE_INCOME_PER_SECOND, CELL_INCOME_PER_SECOND, CELL_INCOME_CAP,
@@ -23,6 +23,7 @@ export function createInitialState(): GameState {
     board,
     towers: [],
     projectiles: [],
+    barriers: [],
     players: {
       p1: { id: 'p1', money: STARTING_MONEY, cells: BOARD_HEIGHT * INITIAL_P1_COLS },
       p2: { id: 'p2', money: STARTING_MONEY, cells: BOARD_HEIGHT * INITIAL_P2_COLS },
@@ -58,24 +59,24 @@ function findTarget(
     if (best) return { x: best.x, y: best.y };
   }
 
-  // Flak lobs onto the deepest reachable enemy cell (the back rows), falling
-  // back to the farthest non-owned cell if no enemy ground is in range.
+  // Flak lobs onto a RANDOM reachable cell, preferring enemy ground over
+  // neutral, so its bombardment can't be predicted or fully focused.
   if (tower.type === 'flak') {
-    let enemy: { x: number; y: number } | null = null, enemyDist = -1;
-    let any: { x: number; y: number } | null = null, anyDist = -1;
+    const enemyCells: { x: number; y: number }[] = [];
+    const anyCells: { x: number; y: number }[] = [];
     const fx0 = Math.max(0, Math.floor(tx - range)), fx1 = Math.min(BOARD_WIDTH - 1, Math.ceil(tx + range));
     const fy0 = Math.max(0, Math.floor(ty - range)), fy1 = Math.min(BOARD_HEIGHT - 1, Math.ceil(ty + range));
     for (let y = fy0; y <= fy1; y++) {
       for (let x = fx0; x <= fx1; x++) {
         const cell = state.board[y][x];
         if (cell === tower.owner) continue;
-        const d = Math.hypot(x - tx, y - ty);
-        if (d > range) continue;
-        if (d > anyDist) { anyDist = d; any = { x, y }; }
-        if (cell !== 'neutral' && d > enemyDist) { enemyDist = d; enemy = { x, y }; }
+        if (Math.hypot(x - tx, y - ty) > range) continue;
+        anyCells.push({ x, y });
+        if (cell !== 'neutral') enemyCells.push({ x, y });
       }
     }
-    return enemy ?? any;
+    const pool = enemyCells.length > 0 ? enemyCells : anyCells;
+    return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null;
   }
 
   // Find nearest non-owned cell
@@ -153,6 +154,22 @@ function explodeSplash(state: GameState, cx: number, cy: number, proj: Projectil
   }
 }
 
+// Perimeter cells of the (2*span+1) square centred on the generator, clamped
+// to the board and skipping cells occupied by towers.
+function ringCells(gen: Tower, span: number, state: GameState): { x: number; y: number }[] {
+  const cells: { x: number; y: number }[] = [];
+  for (let dy = -span; dy <= span; dy++) {
+    for (let dx = -span; dx <= span; dx++) {
+      if (Math.abs(dx) !== span && Math.abs(dy) !== span) continue; // border only
+      const x = gen.x + dx, y = gen.y + dy;
+      if (x < 0 || x >= BOARD_WIDTH || y < 0 || y >= BOARD_HEIGHT) continue;
+      if (state.towers.some(t => t.x === x && t.y === y)) continue;
+      cells.push({ x, y });
+    }
+  }
+  return cells;
+}
+
 function countCells(board: CellColor[][], owner: PlayerId): number {
   let n = 0;
   for (let y = 0; y < BOARD_HEIGHT; y++)
@@ -205,20 +222,43 @@ export function stepGame(state: GameState): void {
     const boost = boosts.get(tower.id) ?? 1;
     tower.cooldown -= boost * lm(tower).speed;
 
-    // Track the current target every tick so the turret keeps facing it,
-    // even between shots.
-    const target = findTarget(state, tower);
-    if (target) {
-      tower.aim = Math.atan2(target.y - tower.y, target.x - tower.x);
-    }
+    // Direct-fire turrets track their target every tick so they keep facing
+    // it between shots. Lob turrets (flak) pick a fresh random target only
+    // when they fire, otherwise the barrel would jitter every tick.
+    let target = cfg.lob ? null : findTarget(state, tower);
+    if (target) tower.aim = Math.atan2(target.y - tower.y, target.x - tower.x);
 
     if (tower.cooldown <= 0) {
+      if (cfg.lob) target = findTarget(state, tower);
       if (target) {
+        tower.aim = Math.atan2(target.y - tower.y, target.x - tower.x);
         fireProjectiles(state, tower, target);
         tower.cooldown = cfg.shootInterval;
       } else {
         tower.cooldown = 0;
       }
+    }
+  }
+
+  // 2b. Wall generators maintain a regenerating shield ring.
+  const activeGens = state.towers.filter(t => TOWER_CONFIGS[t.type].wallHp && t.active);
+  const genIds = new Set(activeGens.map(t => t.id));
+  state.barriers = state.barriers.filter(b => genIds.has(b.ownerId)); // drop dead/inactive gens' walls
+  for (const gen of activeGens) {
+    const cfg = TOWER_CONFIGS[gen.type];
+    const span = cfg.wallSpan ?? 2;
+    const maxHp = cfg.wallHp!;
+    const interval = cfg.wallRegen ?? 200;
+    const b = state.barriers.find(bb => bb.ownerId === gen.id);
+    if (!b) {
+      state.barriers.push({
+        id: uid(), owner: gen.owner, ownerId: gen.id,
+        cells: ringCells(gen, span, state), hp: maxHp, maxHp, regen: interval,
+      });
+    } else if (--b.regen <= 0) {
+      b.hp = maxHp;
+      b.cells = ringCells(gen, span, state);
+      b.regen = interval;
     }
   }
 
@@ -267,6 +307,16 @@ export function stepGame(state: GameState): void {
         state.board[hit.y][hit.x] = proj.owner; // destroyed → attacker captures the ground
         state.towers.splice(hitIdx, 1);
       }
+      dead.add(proj.id);
+      continue;
+    }
+
+    // Enemy wall ring blocks the shot and drains its shared HP pool; when the
+    // pool empties the whole ring vanishes until the generator regenerates it.
+    const barrier = state.barriers.find(b => b.owner !== proj.owner && b.cells.some(c => c.x === cx && c.y === cy));
+    if (barrier) {
+      barrier.hp -= proj.towerDamage;
+      if (barrier.hp <= 0) { barrier.hp = 0; barrier.cells = []; }
       dead.add(proj.id);
       continue;
     }

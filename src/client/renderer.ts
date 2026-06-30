@@ -44,6 +44,7 @@ export class Renderer {
 
     this.drawBoard(state, myId, selectedTower, hovered);
     this.drawRangeCircles(state, selectedTowerId);
+    this.drawBarriers(state);
     this.drawTowers(state, myId, selectedTowerId);
     this.drawProjectiles(state);
 
@@ -116,6 +117,26 @@ export class Renderer {
       ctx.strokeStyle = canPlace ? '#facc15' : '#ef4444';
       ctx.lineWidth = 2;
       ctx.strokeRect(x * S + 1, y * S + 1, S - 2, S - 2);
+    }
+  }
+
+  private drawBarriers(state: GameState): void {
+    const ctx = this.ctx;
+    const S = CELL_SIZE;
+    for (const b of state.barriers) {
+      if (b.cells.length === 0) continue;
+      const ratio = b.maxHp > 0 ? b.hp / b.maxHp : 0;
+      const p1 = b.owner === 'p1';
+      ctx.globalAlpha = 0.35 + 0.45 * ratio; // fades as the shield is worn down
+      for (const c of b.cells) {
+        const x = c.x * S, y = c.y * S;
+        ctx.fillStyle = p1 ? '#3b82f6' : '#ef4444';
+        ctx.fillRect(x + 2, y + 2, S - 4, S - 4);
+        ctx.strokeStyle = p1 ? '#bfdbfe' : '#fecaca';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x + 2.5, y + 2.5, S - 5, S - 5);
+      }
+      ctx.globalAlpha = 1;
     }
   }
 
@@ -329,19 +350,21 @@ export class Renderer {
         r(11, 0, 8, 1, GL);
         break;
       }
-      case 'wall': {
-        // Brick wall — staggered courses, ownership-tinted
-        r(2, 5, 26, 20, dark);
-        r(3, 6, 24, 18, mid);
-        r(3, 6, 24, 1, lite);     // top highlight
-        // horizontal mortar lines
-        r(3, 12, 24, 2, dark);
-        r(3, 18, 24, 2, dark);
-        // staggered vertical seams
-        r(15, 6, 2, 6, dark);
-        r(9, 14, 2, 4, dark);
-        r(21, 14, 2, 4, dark);
-        r(15, 20, 2, 4, dark);
+      case 'wallgen': {
+        // Shield emitter: hexish core with four corner pylons that "project"
+        // the surrounding wall ring.
+        r(6, 6, 4, 4, GD);        // corner pylons
+        r(20, 6, 4, 4, GD);
+        r(6, 20, 4, 4, GD);
+        r(20, 20, 4, 4, GD);
+        r(7, 7, 2, 2, lite);
+        r(21, 7, 2, 2, lite);
+        r(7, 21, 2, 2, lite);
+        r(21, 21, 2, 2, lite);
+        r(9, 9, 12, 12, dark);    // core housing
+        r(10, 10, 10, 10, mid);
+        r(12, 12, 6, 6, lite);    // emitter lens
+        r(13, 13, 4, 4, '#f8fafc');
         break;
       }
       case 'support': {

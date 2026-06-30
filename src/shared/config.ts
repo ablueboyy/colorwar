@@ -39,6 +39,9 @@ export interface TowerConfig {
   healPerTick: number;
   healRange: number;
   lob?: boolean; // shells fly over territory and detonate at the target (高射砲)
+  wallHp?: number;    // 護牆塔: shared HP pool of the generated wall ring
+  wallRegen?: number; // 護牆塔: ticks between full regenerations
+  wallSpan?: number;  // 護牆塔: half-size of the square ring (2 → 5×5)
   label: string;
   glyph: string;
   role: string;
@@ -108,25 +111,26 @@ export const TOWER_CONFIGS: Record<TowerType, TowerConfig> = {
     description: '命中點大範圍一次染色，適合近距離大面積翻盤，但又貴又脆、射程短、幾乎不能拆塔。',
   },
   flak: {
-    cost: 240, maxHp: 70,
-    shootInterval: 150, range: 16, bulletSpeed: 0.35,
+    cost: 260, maxHp: 70,
+    shootInterval: 220, range: 16, bulletSpeed: 0.35,
     towerDamage: 22, splashRadius: 1.5,
     spreadCount: 1, spreadAngleDeg: 0,
     supportRange: 0, speedBoost: 0,
     healPerTick: 0, healRange: 0,
     lob: true,
     label: '高射砲', glyph: 'F', role: '後排轟炸',
-    description: '拋射砲彈越過領地與牆壁，直擊敵方深處後排並範圍染色。射程極遠，但又慢又貴、血薄。',
+    description: '拋射砲彈越過領地與牆壁，隨機砸向敵方領地並範圍染色。射程極遠，但極慢、又貴、血薄。',
   },
-  wall: {
-    cost: 60, maxHp: 450,
+  wallgen: {
+    cost: 200, maxHp: 100,
     shootInterval: 0, range: 0, bulletSpeed: 0,
     towerDamage: 0, splashRadius: 0,
     spreadCount: 0, spreadAngleDeg: 0,
     supportRange: 0, speedBoost: 0,
     healPerTick: 0, healRange: 0,
-    label: '防禦牆', glyph: 'W', role: '阻擋子彈',
-    description: '不發射。高血量的牆，會擋下敵方子彈保護後方砲台（自己的子彈可穿過），被打爆才會消失。便宜，可排成防線。',
+    wallHp: 220, wallRegen: 200, wallSpan: 2,
+    label: '護牆塔', glyph: 'W', role: '生成護牆',
+    description: '不發射。每 10 秒在周圍生成一圈 5×5 護牆攔截敵方子彈（自己的子彈可穿過）；護牆有共用血量，被打爆會暫時消失，下次週期再重建。高射砲可越頂無視它。',
   },
   support: {
     cost: 95, maxHp: 120,
