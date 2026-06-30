@@ -1,5 +1,5 @@
 import type { GameState, PlayerId, Tower, TowerType, ServerMessage } from '../shared/types';
-import { TOWER_CONFIGS, LEVEL_MULTS, UPGRADE_COST_RATIO, MAX_TOWER_LEVEL, SELL_REFUND_RATIO } from '../shared/config';
+import { TOWER_CONFIGS, LEVEL_MULTS, UPGRADE_COST_RATIO, MAX_TOWER_LEVEL, SELL_REFUND_RATIO, LOADOUT_SIZE } from '../shared/config';
 import { WsClient, type ConnStatus } from './wsClient';
 import { Renderer, CELL_SIZE, CANVAS_W, CANVAS_H } from './renderer';
 
@@ -14,6 +14,8 @@ const joinBtn = document.getElementById('join-btn') as HTMLButtonElement;
 const codeInput = document.getElementById('code-input') as HTMLInputElement;
 const lobbyError = document.getElementById('lobby-error')!;
 const connStatus = document.getElementById('conn-status')!;
+const loadoutGrid = document.getElementById('loadout-grid')!;
+const loadoutCount = document.getElementById('loadout-count')!;
 
 const roomCodeEl = document.getElementById('room-code-display')!;
 const waitStatus = document.getElementById('wait-status')!;
@@ -66,6 +68,16 @@ let selectedTower: TowerType | null = 'basic';
 let selectedTowerId: string | null = null;
 let hovered: { x: number; y: number } | null = null;
 let myRoomCode = '';
+let wsOpen = false;
+
+// Pre-game loadout: which towers this player brings into the match.
+const DEFAULT_LOADOUT: TowerType[] = ['basic', 'rapid', 'spread', 'sniper', 'artillery', 'splash', 'support', 'repair'];
+const myLoadout = new Set<TowerType>(DEFAULT_LOADOUT.slice(0, LOADOUT_SIZE));
+
+// Towers in config order, used for both the picker and the in-game panel.
+function loadoutOrdered(): [TowerType, (typeof TOWER_CONFIGS)[TowerType]][] {
+  return TOWER_ENTRIES.filter(([t]) => myLoadout.has(t));
+}
 
 // ── Screens ──────────────────────────────────────────────────────────────────
 function showScreen(name: 'lobby' | 'waiting' | 'game' | 'gameover'): void {
@@ -75,10 +87,50 @@ function showScreen(name: 'lobby' | 'waiting' | 'game' | 'gameover'): void {
   gameOverEl.style.display = name === 'gameover' ? '' : 'none';
 }
 
+// ── Loadout picker (lobby) ────────────────────────────────────────────────────
+function buildLoadoutPicker(): void {
+  loadoutGrid.innerHTML = '';
+  for (const [type, cfg] of TOWER_ENTRIES) {
+    const btn = document.createElement('button');
+    btn.className = 'lo-btn';
+    btn.dataset.type = type;
+    btn.innerHTML = `<span class="lo-glyph">${cfg.glyph}</span><span class="lo-label">${cfg.label}</span><span class="lo-cost">$${cfg.cost}</span>`;
+    btn.title = cfg.description;
+    btn.addEventListener('click', () => toggleLoadout(type));
+    loadoutGrid.appendChild(btn);
+  }
+  refreshLoadoutUI();
+}
+
+function toggleLoadout(type: TowerType): void {
+  if (myLoadout.has(type)) myLoadout.delete(type);
+  else if (myLoadout.size < LOADOUT_SIZE) myLoadout.add(type);
+  refreshLoadoutUI();
+}
+
+function refreshLoadoutUI(): void {
+  const full = myLoadout.size >= LOADOUT_SIZE;
+  loadoutCount.textContent = `${myLoadout.size} / ${LOADOUT_SIZE}`;
+  loadoutCount.classList.toggle('full', myLoadout.size === LOADOUT_SIZE);
+  loadoutGrid.querySelectorAll<HTMLButtonElement>('.lo-btn').forEach(btn => {
+    const t = btn.dataset.type as TowerType;
+    const picked = myLoadout.has(t);
+    btn.classList.toggle('picked', picked);
+    btn.classList.toggle('locked', !picked && full); // can't add more once full
+  });
+  refreshLobby();
+}
+
+function refreshLobby(): void {
+  const ready = wsOpen && myLoadout.size === LOADOUT_SIZE;
+  createBtn.disabled = !ready;
+  joinBtn.disabled = !ready;
+}
+
 // ── Tower panel buttons ───────────────────────────────────────────────────────
 function buildTowerPanel(): void {
   towerPanel.innerHTML = '';
-  for (const [type, cfg] of TOWER_ENTRIES) {
+  for (const [type, cfg] of loadoutOrdered()) {
     const btn = document.createElement('button');
     btn.className = 'tower-btn';
     btn.dataset.type = type;
@@ -94,7 +146,8 @@ function buildTowerPanel(): void {
     }
     if (selectedTower) renderTowerInfo(selectedTower);
   });
-  selectTower('basic');
+  const first = loadoutOrdered()[0]?.[0] ?? 'basic';
+  selectTower(first);
 }
 
 function selectTower(type: TowerType): void {
@@ -395,16 +448,20 @@ ws.on((msg: ServerMessage) => {
 });
 
 // ── Lobby buttons ─────────────────────────────────────────────────────────────
+function currentLoadout(): TowerType[] {
+  return loadoutOrdered().map(([t]) => t);
+}
+
 createBtn.addEventListener('click', () => {
   lobbyError.textContent = '';
-  ws.send({ type: 'CREATE_ROOM' });
+  ws.send({ type: 'CREATE_ROOM', loadout: currentLoadout() });
 });
 
 joinBtn.addEventListener('click', () => {
   const code = codeInput.value.trim().toUpperCase();
   if (!code) { lobbyError.textContent = 'Enter a room code'; return; }
   lobbyError.textContent = '';
-  ws.send({ type: 'JOIN_ROOM', code });
+  ws.send({ type: 'JOIN_ROOM', code, loadout: currentLoadout() });
 });
 
 codeInput.addEventListener('keydown', (e) => {
@@ -424,27 +481,24 @@ function loop(): void {
 }
 
 // ── Connection status ─────────────────────────────────────────────────────────
-function setLobbyEnabled(enabled: boolean): void {
-  createBtn.disabled = !enabled;
-  joinBtn.disabled = !enabled;
-}
-
 ws.onStatus((status: ConnStatus) => {
   connStatus.className = status;
   if (status === 'connecting') {
     connStatus.textContent = '連線中…（伺服器休眠時需等約 30 秒喚醒）';
-    setLobbyEnabled(false);
+    wsOpen = false;
   } else if (status === 'open') {
     connStatus.textContent = '● 已連線';
-    setLobbyEnabled(true);
+    wsOpen = true;
   } else {
     connStatus.textContent = '連線中斷，自動重新連線中…';
-    setLobbyEnabled(false);
+    wsOpen = false;
   }
+  refreshLobby();
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 showScreen('lobby');
-setLobbyEnabled(false);
+buildLoadoutPicker();
+refreshLobby();
 ws.connect();
 requestAnimationFrame(loop);

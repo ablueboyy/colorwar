@@ -1,11 +1,19 @@
 import { WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage, PlayerId, TowerType } from '../shared/types';
 import { createInitialState, stepGame } from '../shared/gameLogic';
-import { BOARD_WIDTH, BOARD_HEIGHT, TICK_INTERVAL_MS, TOWER_CONFIGS, SELL_REFUND_RATIO, LEVEL_MULTS, UPGRADE_COST_RATIO, MAX_TOWER_LEVEL } from '../shared/config';
+import { BOARD_WIDTH, BOARD_HEIGHT, TICK_INTERVAL_MS, TOWER_CONFIGS, SELL_REFUND_RATIO, LEVEL_MULTS, UPGRADE_COST_RATIO, MAX_TOWER_LEVEL, LOADOUT_SIZE } from '../shared/config';
 
 interface PlayerConn {
   ws: WebSocket;
   id: PlayerId;
+  loadout: TowerType[];
+}
+
+function sanitizeLoadout(raw: TowerType[] | undefined): TowerType[] {
+  const valid = (raw ?? []).filter((t): t is TowerType => t in TOWER_CONFIGS);
+  const uniq = [...new Set(valid)];
+  if (uniq.length === 0) return Object.keys(TOWER_CONFIGS) as TowerType[]; // fallback: allow all
+  return uniq.slice(0, LOADOUT_SIZE);
 }
 
 export class Room {
@@ -21,9 +29,9 @@ export class Room {
   get isFull() { return this.players.length >= 2; }
   get isEmpty() { return this.players.length === 0; }
 
-  addPlayer(ws: WebSocket): PlayerId {
+  addPlayer(ws: WebSocket, loadout: TowerType[]): PlayerId {
     const id: PlayerId = this.players.length === 0 ? 'p1' : 'p2';
-    this.players.push({ ws, id });
+    this.players.push({ ws, id, loadout: sanitizeLoadout(loadout) });
 
     if (this.players.length === 2) this.startGame();
 
@@ -46,6 +54,8 @@ export class Room {
 
   private placeTower(pid: PlayerId, type: TowerType, x: number, y: number): void {
     const s = this.state;
+    const conn = this.players.find(p => p.id === pid);
+    if (!conn || !conn.loadout.includes(type)) return; // only towers in this player's loadout
     if (x < 0 || x >= BOARD_WIDTH || y < 0 || y >= BOARD_HEIGHT) return;
     if (s.board[y][x] !== pid) return;
     if (s.towers.some(t => t.x === x && t.y === y)) return;

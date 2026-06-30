@@ -50,7 +50,7 @@ wss.on('connection', (ws) => {
       const code = genCode();
       room = new Room(code);
       rooms.set(code, room);
-      const pid = room.addPlayer(ws);
+      const pid = room.addPlayer(ws, msg.loadout);
       send(ws, { type: 'ROOM_CREATED', code, playerId: pid });
       send(ws, { type: 'WAITING_FOR_OPPONENT' });
     } else if (msg.type === 'JOIN_ROOM') {
@@ -59,7 +59,7 @@ wss.on('connection', (ws) => {
       if (!target) { send(ws, { type: 'ERROR', message: 'Room not found' }); return; }
       if (target.isFull) { send(ws, { type: 'ERROR', message: 'Room is full' }); return; }
       room = target;
-      const pid = room.addPlayer(ws);
+      const pid = room.addPlayer(ws, msg.loadout);
       send(ws, { type: 'ROOM_JOINED', code: msg.code, playerId: pid });
     } else if (room) {
       room.handleMessage(ws, msg);

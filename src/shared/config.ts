@@ -24,6 +24,9 @@ export const INITIAL_P1_COLS = 3;
 export const INITIAL_P2_COLS = 3;
 export const STARTING_MONEY = 100;
 
+// How many towers each player brings into a match (chosen pre-game).
+export const LOADOUT_SIZE = 8;
+
 export interface TowerConfig {
   cost: number;
   maxHp: number;

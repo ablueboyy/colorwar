@@ -51,8 +51,61 @@
       flex-direction: column;
       align-items: center;
       gap: 20px;
-      margin-top: 20px;
+      margin-top: 12px;
     }
+
+    /* Loadout picker */
+    #loadout {
+      background: #0b1526;
+      border: 1px solid #1e3655;
+      border-radius: 8px;
+      padding: 14px 16px;
+      width: 560px;
+      max-width: 92vw;
+    }
+    .loadout-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 0.72rem;
+      letter-spacing: 3px;
+      color: #94a3b8;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    #loadout-count { color: #facc15; font-weight: bold; letter-spacing: 1px; }
+    #loadout-count.full { color: #4ade80; }
+    #loadout-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+    }
+    .lo-btn {
+      background: #060d1a;
+      border: 1px solid #1e3655;
+      border-radius: 5px;
+      color: #e2e8f0;
+      cursor: pointer;
+      font-family: inherit;
+      padding: 7px 4px 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      transition: border-color 0.1s, background 0.1s, opacity 0.1s;
+    }
+    .lo-btn:hover { border-color: #3b82f6; }
+    .lo-btn.picked {
+      border-color: #facc15;
+      background: #15120a;
+      box-shadow: 0 0 8px rgba(250,204,21,0.25);
+    }
+    .lo-btn.locked { opacity: 0.4; }
+    .lo-glyph { font-size: 0.95rem; font-weight: bold; color: #60a5fa; line-height: 1; }
+    .lo-btn.picked .lo-glyph { color: #facc15; }
+    .lo-label { font-size: 0.62rem; color: #94a3b8; white-space: nowrap; }
+    .lo-cost { font-size: 0.58rem; color: #fbbf24; font-weight: bold; }
+    .loadout-hint { font-size: 0.62rem; color: #334155; margin-top: 10px; letter-spacing: 1px; text-align: center; }
 
     .lobby-actions {
       display: flex;
@@ -467,6 +520,14 @@
 
   <!-- ── Lobby ── -->
   <div id="lobby">
+    <div id="loadout">
+      <div class="loadout-head">
+        <span>選擇出戰砲台</span>
+        <span id="loadout-count">0 / 8</span>
+      </div>
+      <div id="loadout-grid"><!-- filled by JS --></div>
+      <div class="loadout-hint">選滿 8 種才能開始；對局中只能使用帶上場的砲台</div>
+    </div>
     <div class="lobby-actions">
       <div class="lobby-card">
         <div class="lobby-card-title">New Game</div>

@@ -68,8 +68,8 @@ export interface GameState {
 }
 
 export type ClientMessage =
-  | { type: 'CREATE_ROOM' }
-  | { type: 'JOIN_ROOM'; code: string }
+  | { type: 'CREATE_ROOM'; loadout: TowerType[] }
+  | { type: 'JOIN_ROOM'; code: string; loadout: TowerType[] }
   | { type: 'PLACE_TOWER'; towerType: TowerType; x: number; y: number }
   | { type: 'SELL_TOWER'; towerId: string }
   | { type: 'UPGRADE_TOWER'; towerId: string };
