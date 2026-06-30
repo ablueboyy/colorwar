@@ -131,10 +131,6 @@ function renderSelectedTowerInfo(tower: Tower): void {
       <div class="ti-stat"><span class="lab">類型</span><span class="bars">${cfg.role}</span></div>
     </div>`;
 
-  const btn = towerInfo.querySelector<HTMLButtonElement>('.btn-upgrade');
-  if (btn && canAfford) {
-    btn.addEventListener('click', () => ws.send({ type: 'UPGRADE_TOWER', towerId: tower.id }));
-  }
 }
 
 function bars(value: number, max: number): string {
@@ -364,6 +360,14 @@ ws.onStatus((status: ConnStatus) => {
     connStatus.textContent = '連線中斷，自動重新連線中…';
     setLobbyEnabled(false);
   }
+});
+
+// ── Upgrade delegation (permanent listener — survives innerHTML replacement) ──
+towerInfo.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>('.btn-upgrade');
+  if (!btn || btn.classList.contains('cant-afford')) return;
+  const towerId = btn.dataset.id;
+  if (towerId) ws.send({ type: 'UPGRADE_TOWER', towerId });
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────

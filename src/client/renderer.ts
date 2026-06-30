@@ -40,25 +40,16 @@ export class Renderer {
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
     this.drawBoard(state, myId, selectedTower, hovered);
-    this.drawRangeCircles(state, selectedTowerId, hovered);
+    this.drawRangeCircles(state, selectedTowerId);
     this.drawTowers(state, myId, selectedTowerId);
     this.drawProjectiles(state);
 
     if (state.phase === 'ended') this.drawEndOverlay(state);
   }
 
-  private drawRangeCircles(
-    state: GameState,
-    selectedTowerId: string | null,
-    hovered: { x: number; y: number } | null,
-  ): void {
-    if (selectedTowerId) {
-      const t = state.towers.find(t => t.id === selectedTowerId);
-      if (t) this.drawRangeCircle(t);
-    }
-    if (hovered) {
-      const t = state.towers.find(t => t.x === hovered.x && t.y === hovered.y);
-      if (t && t.id !== selectedTowerId && (t.type === 'support' || t.type === 'repair')) {
+  private drawRangeCircles(state: GameState, selectedTowerId: string | null): void {
+    for (const t of state.towers) {
+      if (t.type === 'support' || t.type === 'repair' || t.id === selectedTowerId) {
         this.drawRangeCircle(t);
       }
     }
