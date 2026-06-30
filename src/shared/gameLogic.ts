@@ -240,7 +240,9 @@ export function stepGame(state: GameState): void {
     }
   }
 
-  // 2b. Wall generators maintain a regenerating shield ring.
+  // 2b. Wall generators keep a shield ring. The ring does NOT self-heal; once
+  // it is destroyed it stays down and only rebuilds after a cooldown counted
+  // from the moment it fell (barrier.regen: -1 = alive, >0 = ticks until rebuild).
   const activeGens = state.towers.filter(t => TOWER_CONFIGS[t.type].wallHp && t.active);
   const genIds = new Set(activeGens.map(t => t.id));
   state.barriers = state.barriers.filter(b => genIds.has(b.ownerId)); // drop dead/inactive gens' walls
@@ -248,17 +250,20 @@ export function stepGame(state: GameState): void {
     const cfg = TOWER_CONFIGS[gen.type];
     const span = cfg.wallSpan ?? 2;
     const maxHp = cfg.wallHp!;
-    const interval = cfg.wallRegen ?? 200;
+    const downtime = cfg.wallRegen ?? 300;
     const b = state.barriers.find(bb => bb.ownerId === gen.id);
     if (!b) {
       state.barriers.push({
         id: uid(), owner: gen.owner, ownerId: gen.id,
-        cells: ringCells(gen, span, state), hp: maxHp, maxHp, regen: interval,
+        cells: ringCells(gen, span, state), hp: maxHp, maxHp, regen: -1,
       });
-    } else if (--b.regen <= 0) {
-      b.hp = maxHp;
-      b.cells = ringCells(gen, span, state);
-      b.regen = interval;
+    } else if (b.hp <= 0) {
+      if (b.regen < 0) b.regen = downtime;        // just fell → start the rebuild timer
+      else if (--b.regen <= 0) {                   // timer elapsed → rebuild at full HP
+        b.hp = maxHp;
+        b.cells = ringCells(gen, span, state);
+        b.regen = -1;
+      }
     }
   }
 

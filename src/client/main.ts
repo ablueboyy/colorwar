@@ -220,7 +220,7 @@ function renderTowerInfo(type: TowerType): void {
 
   let special: string;
   if (c.lob) special = '越頂拋射、隨機砸落';
-  else if (c.wallHp) special = '每 10 秒生成 5×5 護牆';
+  else if (c.wallHp) special = '5×5 護牆，破壞後 15 秒重建';
   else if (c.spreadCount > 1) special = `扇形 ${c.spreadCount} 連發`;
   else if (c.splashRadius > 0) special = '範圍爆炸染色';
   else if (c.speedBoost > 0) special = `周圍友軍射速 +${Math.round(c.speedBoost * 100)}%`;

@@ -128,9 +128,9 @@ export const TOWER_CONFIGS: Record<TowerType, TowerConfig> = {
     spreadCount: 0, spreadAngleDeg: 0,
     supportRange: 0, speedBoost: 0,
     healPerTick: 0, healRange: 0,
-    wallHp: 220, wallRegen: 200, wallSpan: 2,
+    wallHp: 150, wallRegen: 300, wallSpan: 2,
     label: '護牆塔', glyph: 'W', role: '生成護牆',
-    description: '不發射。每 10 秒在周圍生成一圈 5×5 護牆攔截敵方子彈（自己的子彈可穿過）；護牆有共用血量，被打爆會暫時消失，下次週期再重建。高射砲可越頂無視它。',
+    description: '不發射。在周圍生成一圈 5×5 護牆攔截敵方子彈（自己的子彈可穿過）；護牆有共用血量、不會自動回血，被打爆消失後要等 15 秒才重建。高射砲可越頂無視它。',
   },
   support: {
     cost: 95, maxHp: 120,
