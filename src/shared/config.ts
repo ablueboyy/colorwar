@@ -5,7 +5,9 @@ export const BOARD_HEIGHT = 20;
 export const TICK_RATE = 20;
 export const TICK_INTERVAL_MS = 1000 / TICK_RATE;
 export const GAME_DURATION = 180;
-export const KO_THRESHOLD = 0.8;
+// Territory share that ends the match instantly. 1 = effectively disabled (only
+// a 100% wipe ends early), so games are decided by who leads when time runs out.
+export const KO_THRESHOLD = 1;
 
 export const MAX_TOWER_LEVEL = 3;
 export const UPGRADE_COST_RATIO = 0.5;
