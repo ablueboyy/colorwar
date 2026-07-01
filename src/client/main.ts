@@ -69,6 +69,16 @@ const TOTAL_CELLS = BOARD_WIDTH * BOARD_HEIGHT;
 const ws = new WsClient();
 const renderer = new Renderer(canvas);
 
+// Tower sprite icons for the DOM buttons/panels (cached data URLs), replacing
+// the old single-letter glyphs with the actual pixel-art turret.
+const iconUrlCache = new Map<string, string>();
+function towerIcon(type: TowerType, cls: string, px: number): string {
+  const key = `${type}@${px}`;
+  let url = iconUrlCache.get(key);
+  if (!url) { url = renderer.iconDataUrl(type, px); iconUrlCache.set(key, url); }
+  return `<img class="${cls}" width="${px}" height="${px}" src="${url}" alt="">`;
+}
+
 let myId: PlayerId | null = null;
 let currentState: GameState | null = null;
 let selectedTower: TowerType | null = 'basic';
@@ -82,6 +92,9 @@ let wsOpen = false;
 let inGame = false;
 let selfDown = false; // our own socket is down while in a match
 let oppDown = false;  // opponent dropped and we're waiting on their grace window
+
+// A charged 獻祭砲 the player has picked up and is aiming; next map click fires it.
+let armedSacrificeId: string | null = null;
 
 // Pre-game loadout: which towers this player brings into the match.
 const DEFAULT_LOADOUT: TowerType[] = ['basic', 'rapid', 'spread', 'sniper', 'artillery', 'splash', 'support', 'repair'];
@@ -122,7 +135,7 @@ function buildLoadoutPicker(): void {
     const btn = document.createElement('button');
     btn.className = 'lo-btn';
     btn.dataset.type = type;
-    btn.innerHTML = `<span class="lo-glyph">${cfg.glyph}</span><span class="lo-label">${cfg.label}</span><span class="lo-cost">$${cfg.cost}</span>`;
+    btn.innerHTML = `${towerIcon(type, 'lo-glyph', 22)}<span class="lo-label">${cfg.label}</span><span class="lo-cost">$${cfg.cost}</span>`;
     // Tap shows the detail panel (touch-friendly) and toggles the pick; desktop
     // also previews on hover.
     btn.addEventListener('click', () => { toggleLoadout(type); renderLoadoutDetail(type); });
@@ -145,7 +158,7 @@ function specialText(c: (typeof TOWER_CONFIGS)[TowerType]): string {
   if (c.active) return '主動技：點任意格投彈';
   if (c.slowDuration) return `落點敵塔降速 ${Math.round((c.slowFactor ?? 0.2) * 100)}%／${c.slowDuration / TICK_RATE} 秒`;
   if (c.lob) return '越頂拋射、隨機砸落';
-  if (c.sacrifice) return '吞噬周圍 8 塔 → 核爆';
+  if (c.sacrifice) return '吞噬 8 塔 → 蓄能，可拖曳投擲';
   if (c.octopus) return '八方向齊射';
   if (c.summonInterval) return `每 ${c.summonInterval / TICK_RATE} 秒召喚基礎砲`;
   if (c.magnetRange) return '吸附附近敵方子彈';
@@ -178,7 +191,7 @@ function renderLoadoutDetail(type: TowerType): void {
 
   loadoutDetail.innerHTML = `
     <div class="ld-header">
-      <span class="ld-glyph">${c.glyph}</span>
+      ${towerIcon(type, 'ld-glyph', 24)}
       <span class="ld-name">${c.label}</span>
       <span class="ld-role">${c.role}</span>
       <span class="ld-status ${picked ? 'in' : 'out'}">${picked ? '✓ 已帶上場' : '未帶'}</span>
@@ -220,7 +233,7 @@ function buildTowerPanel(): void {
     const btn = document.createElement('button');
     btn.className = 'tower-btn';
     btn.dataset.type = type;
-    btn.innerHTML = `<span class="tw-glyph">${cfg.glyph}</span><span class="tw-label">${cfg.label}</span><span class="tw-cost">$${cfg.cost}</span>`;
+    btn.innerHTML = `${towerIcon(type, 'tw-glyph', 24)}<span class="tw-label">${cfg.label}</span><span class="tw-cost">$${cfg.cost}</span>`;
     btn.addEventListener('click', () => selectTower(type));
     btn.addEventListener('mouseenter', () => renderTowerInfo(type));
     towerPanel.appendChild(btn);
@@ -266,7 +279,7 @@ function renderSelectedTowerInfo(tower: Tower): void {
 
   towerInfo.innerHTML = `
     <div class="ti-header">
-      <span class="ti-glyph">${cfg.glyph}</span>
+      ${towerIcon(tower.type, 'ti-glyph', 26)}
       <span class="ti-name">${cfg.label}</span>
       <span class="ti-role" style="background:#22c55e;color:#052e16">Lv.${tower.level}</span>
       <span class="ti-cost">${cfg.role}</span>
@@ -361,7 +374,7 @@ function renderTowerInfo(type: TowerType): void {
 
   towerInfo.innerHTML = `
     <div class="ti-header">
-      <span class="ti-glyph">${c.glyph}</span>
+      ${towerIcon(type, 'ti-glyph', 26)}
       <span class="ti-name">${c.label}</span>
       <span class="ti-role">${c.role}</span>
       <span class="ti-cost">$${c.cost}</span>
@@ -388,9 +401,10 @@ function getCell(e: MouseEvent): { x: number; y: number } {
 
 canvas.addEventListener('mousemove', (e) => {
   const { x, y } = getCell(e);
-  if (x >= 0 && x < 24 && y >= 0 && y < 16) hovered = { x, y };
+  if (x >= 0 && x < BOARD_WIDTH && y >= 0 && y < BOARD_HEIGHT) hovered = { x, y };
   else hovered = null;
 
+  if (armedSacrificeId) { canvas.style.cursor = 'crosshair'; return; } // aiming a charged 獻祭砲
   if (!currentState || !myId || !selectedTower) { canvas.style.cursor = 'default'; return; }
   if (TOWER_CONFIGS[selectedTower].active) { canvas.style.cursor = 'crosshair'; return; } // 炸彈 anywhere
   const state = currentState;
@@ -403,7 +417,18 @@ canvas.addEventListener('mouseleave', () => { hovered = null; });
 canvas.addEventListener('click', (e) => {
   if (!currentState || !myId) return;
   const { x, y } = getCell(e);
-  if (x < 0 || x >= 24 || y < 0 || y >= 16) return;
+  if (x < 0 || x >= BOARD_WIDTH || y < 0 || y >= BOARD_HEIGHT) return;
+
+  // A charged 獻祭砲 is armed → this click detonates it at the target cell.
+  if (armedSacrificeId) {
+    ws.send({ type: 'DETONATE', towerId: armedSacrificeId, x, y });
+    armedSacrificeId = null;
+    return;
+  }
+
+  // Clicking your own charged 獻祭砲 arms it (pick up the nuke, then aim).
+  const charged = currentState.towers.find(t => t.x === x && t.y === y && t.owner === myId && t.charged);
+  if (charged) { armedSacrificeId = charged.id; deselectTower(); return; }
 
   // 炸彈 (active ability): click any cell to drop it.
   if (selectedTower && TOWER_CONFIGS[selectedTower].active) {
@@ -426,9 +451,12 @@ canvas.addEventListener('click', (e) => {
 canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   if (!currentState || !myId) return;
+  // Right-click cancels an armed 獻祭砲 instead of selling.
+  if (armedSacrificeId) { armedSacrificeId = null; return; }
   const { x, y } = getCell(e);
   const tower = currentState.towers.find(t => t.x === x && t.y === y && t.owner === myId);
   if (tower) {
+    if (tower.charged) return; // don't sell a charged nuke by accident
     if (selectedTowerId === tower.id) deselectTower();
     ws.send({ type: 'SELL_TOWER', towerId: tower.id });
   }
@@ -606,9 +634,17 @@ codeInput.addEventListener('keydown', (e) => {
 playAgainBtn.addEventListener('click', () => location.reload());
 
 // ── Render loop ───────────────────────────────────────────────────────────────
+const SACRIFICE_BLAST = TOWER_CONFIGS.sacrifice.splashRadius;
 function loop(): void {
   if (currentState) {
-    renderer.draw(currentState, myId, selectedTower, hovered, selectedTowerId);
+    // Drop a stale arming if the charged tower is gone (detonated/destroyed).
+    if (armedSacrificeId && !currentState.towers.some(t => t.id === armedSacrificeId && t.charged)) {
+      armedSacrificeId = null;
+    }
+    const armedBlast = armedSacrificeId && hovered
+      ? { x: hovered.x, y: hovered.y, radius: SACRIFICE_BLAST }
+      : null;
+    renderer.draw(currentState, myId, selectedTower, hovered, selectedTowerId, armedBlast);
     updateHud(currentState);
     updateTowerActions();
   }

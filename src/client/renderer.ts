@@ -1,9 +1,12 @@
 import type { GameState, PlayerId, Tower, TowerType } from '../shared/types';
 import { BOARD_WIDTH, BOARD_HEIGHT, TOWER_CONFIGS, LEVEL_MULTS } from '../shared/config';
 
-export const CELL_SIZE = 30;
+export const CELL_SIZE = 24;
 export const CANVAS_W = BOARD_WIDTH * CELL_SIZE;
 export const CANVAS_H = BOARD_HEIGHT * CELL_SIZE;
+// Tower sprites are hand-authored in a 30×30 coordinate space; we scale them to
+// the actual CELL_SIZE so the board can change size without redrawing art.
+export const SPRITE_UNIT = 30;
 
 const COLORS = {
   neutral: '#4a5568',
@@ -38,17 +41,81 @@ export class Renderer {
     selectedTower: TowerType | null,
     hovered: { x: number; y: number } | null,
     selectedTowerId: string | null,
+    armedBlast: { x: number; y: number; radius: number } | null = null,
   ): void {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
     this.drawBoard(state, myId, selectedTower, hovered);
     this.drawRangeCircles(state, selectedTowerId);
+    this.drawEffects(state);
     this.drawBarriers(state);
     this.drawTowers(state, myId, selectedTowerId);
     this.drawProjectiles(state);
+    if (armedBlast) this.drawArmedBlast(armedBlast);
 
     if (state.phase === 'ended') this.drawEndOverlay(state);
+  }
+
+  // Target preview for a charged 獻祭砲 the player is aiming.
+  private drawArmedBlast(a: { x: number; y: number; radius: number }): void {
+    const ctx = this.ctx, S = CELL_SIZE;
+    const cx = (a.x + 0.5) * S, cy = (a.y + 0.5) * S;
+    ctx.save();
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 200);
+    ctx.globalAlpha = 0.12 + 0.10 * pulse;
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath(); ctx.arc(cx, cy, a.radius * S, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = '#facc15';
+    ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.arc(cx, cy, a.radius * S, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // Cosmetic effects: lingering jammer fields and sacrifice nuke flashes.
+  private drawEffects(state: GameState): void {
+    const ctx = this.ctx, S = CELL_SIZE;
+    const now = performance.now();
+    for (const e of state.effects) {
+      const cx = (e.x + 0.5) * S, cy = (e.y + 0.5) * S;
+      const R = e.radius * S;
+      const life = e.maxTtl > 0 ? e.ttl / e.maxTtl : 0;
+      const p1 = e.owner === 'p1';
+
+      if (e.kind === 'jammer') {
+        ctx.save();
+        ctx.globalAlpha = 0.10 + 0.05 * Math.sin(now / 180);
+        ctx.fillStyle = p1 ? '#3b82f6' : '#ef4444';
+        ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 0.45;
+        ctx.strokeStyle = p1 ? '#93c5fd' : '#fca5a5';
+        ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+        // orbiting interference particles
+        const n = 7;
+        ctx.fillStyle = p1 ? '#bfdbfe' : '#fecaca';
+        for (let i = 0; i < n; i++) {
+          const a = now / 350 + (i * Math.PI * 2) / n;
+          const rr = R * (0.35 + 0.6 * (((i * 7) % 5) / 5));
+          ctx.globalAlpha = 0.85;
+          ctx.fillRect(cx + Math.cos(a) * rr - 1.5, cy + Math.sin(a) * rr - 1.5, 3, 3);
+        }
+        ctx.restore();
+      } else { // nuke: bright expanding shockwave
+        ctx.save();
+        const grow = 0.3 + 0.7 * (1 - life);
+        ctx.globalAlpha = Math.max(0, life);
+        ctx.strokeStyle = '#fde68a'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(cx, cy, R * grow, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 0.25 * life;
+        ctx.fillStyle = '#fbbf24';
+        ctx.beginPath(); ctx.arc(cx, cy, R * grow, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    }
   }
 
   private drawRangeCircles(state: GameState, selectedTowerId: string | null): void {
@@ -173,12 +240,26 @@ export class Renderer {
       } else {
         ctx.translate(px, py);
       }
-      this.drawTowerSprite(ctx, tower.type, S, dark, mid, lite);
+      ctx.scale(S / SPRITE_UNIT, S / SPRITE_UNIT); // sprites authored in 30px space
+      this.drawTowerSprite(ctx, tower.type, dark, mid, lite);
       ctx.restore();
 
       // ── Overlays (always upright) ──
       ctx.save();
       ctx.translate(px, py);
+
+      // Charged 獻祭砲: pulsing golden glow so it reads as "armed".
+      if (tower.charged) {
+        const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 250);
+        ctx.save();
+        ctx.shadowColor = '#fbbf24';
+        ctx.shadowBlur = 6 + 6 * pulse;
+        ctx.globalAlpha = 0.5 + 0.4 * pulse;
+        ctx.strokeStyle = '#fde68a';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(1.5, 1.5, S - 3, S - 3);
+        ctx.restore();
+      }
 
       // Selection outline
       if (isSelected) {
@@ -231,10 +312,20 @@ export class Renderer {
     return next;
   }
 
+  // Renders a tower to a small data-URL icon (used for the DOM tower buttons).
+  iconDataUrl(type: TowerType, size = 26): string {
+    const c = document.createElement('canvas');
+    c.width = size; c.height = size;
+    const ctx = c.getContext('2d')!;
+    ctx.imageSmoothingEnabled = false;
+    ctx.scale(size / SPRITE_UNIT, size / SPRITE_UNIT);
+    this.drawTowerSprite(ctx, type, '#1e3a8a', '#2563eb', '#93c5fd');
+    return c.toDataURL();
+  }
+
   private drawTowerSprite(
     ctx: CanvasRenderingContext2D,
     type: TowerType,
-    S: number,
     dark: string,
     mid: string,
     lite: string,

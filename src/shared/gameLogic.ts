@@ -25,6 +25,7 @@ export function createInitialState(): GameState {
     towers: [],
     projectiles: [],
     barriers: [],
+    effects: [],
     players: {
       p1: { id: 'p1', money: STARTING_MONEY, cells: BOARD_HEIGHT * INITIAL_P1_COLS, bombCooldown: 0 },
       p2: { id: 'p2', money: STARTING_MONEY, cells: BOARD_HEIGHT * INITIAL_P2_COLS, bombCooldown: 0 },
@@ -63,11 +64,22 @@ function findTarget(
     if (pick) return { x: pick.x, y: pick.y };
   }
 
-  // Jammer lobs at a random enemy tower in range (to slow clusters).
+  // Jammer aims where its blast catches the most enemies that aren't already
+  // slowed, so repeated shots spread the interference instead of re-hitting the
+  // same cluster.
   if (tower.type === 'jammer') {
     const enemies = state.towers.filter(t => t.owner !== tower.owner && Math.hypot(t.x - tx, t.y - ty) <= range);
     if (enemies.length === 0) return null;
-    const e = enemies[Math.floor(Math.random() * enemies.length)];
+    const blast = cfg.splashRadius;
+    let e = enemies[0], bestScore = -1;
+    for (const c of enemies) {
+      let score = 0;
+      for (const o of state.towers) {
+        if (o.owner === tower.owner || o.slow > 0) continue;
+        if (Math.hypot(o.x - c.x, o.y - c.y) <= blast) score++;
+      }
+      if (score > bestScore) { bestScore = score; e = c; }
+    }
     return { x: e.x, y: e.y };
   }
 
@@ -170,6 +182,40 @@ export function explodeSplash(
   }
 }
 
+// 獻祭砲 charged blast: paints the radius and chips every enemy tower by a
+// fraction of its MAX hp, so a big cluster is badly hurt but not wiped outright.
+export function explodePercent(
+  state: GameState, cx: number, cy: number,
+  owner: PlayerId, hpPercent: number, splashRadius: number,
+): void {
+  const sr = Math.ceil(splashRadius);
+  for (let dy = -sr; dy <= sr; dy++) {
+    for (let dx = -sr; dx <= sr; dx++) {
+      if (Math.hypot(dx, dy) > splashRadius) continue;
+      const nx = cx + dx, ny = cy + dy;
+      if (nx < 0 || nx >= BOARD_WIDTH || ny < 0 || ny >= BOARD_HEIGHT) continue;
+      const ei = state.towers.findIndex(t => t.x === nx && t.y === ny && t.owner !== owner);
+      if (ei !== -1) {
+        state.towers[ei].hp -= state.towers[ei].maxHp * hpPercent;
+        if (state.towers[ei].hp <= 0) {
+          state.board[ny][nx] = owner;
+          state.towers.splice(ei, 1);
+        }
+        continue;
+      }
+      if (state.board[ny][nx] !== owner) state.board[ny][nx] = owner;
+    }
+  }
+}
+
+// Push a short-lived cosmetic effect for the client to animate.
+export function spawnEffect(
+  state: GameState, kind: 'jammer' | 'nuke', x: number, y: number,
+  radius: number, ttl: number, owner: PlayerId,
+): void {
+  state.effects.push({ id: uid(), kind, x, y, radius, ttl, maxTtl: ttl, owner });
+}
+
 // 干擾砲: lobbed shell that, on landing, slows enemy towers in the blast area.
 function applyJammer(state: GameState, cx: number, cy: number, proj: Projectile): void {
   const cfg = TOWER_CONFIGS[proj.towerType];
@@ -180,6 +226,8 @@ function applyJammer(state: GameState, cx: number, cy: number, proj: Projectile)
     if (Math.abs(t.x - cx) > sr || Math.abs(t.y - cy) > sr) continue;
     if (Math.hypot(t.x - cx, t.y - cy) <= proj.splashRadius) t.slow = Math.max(t.slow, dur);
   }
+  // Show the interference field for as long as the slow lasts.
+  spawnEffect(state, 'jammer', cx, cy, proj.splashRadius, dur, proj.owner);
 }
 
 // Create a tower (used by 召喚塔 spawns).
@@ -256,6 +304,12 @@ export function stepGame(state: GameState): void {
   const dt = 1 / TICK_RATE;
   state.tick++;
   state.timeLeft -= dt;
+
+  // Age out cosmetic effects (jammer fields / nuke flashes).
+  if (state.effects.length) {
+    for (const e of state.effects) e.ttl--;
+    state.effects = state.effects.filter(e => e.ttl > 0);
+  }
 
   // 1a. Compute support speed boosts
   const boosts = new Map<string, number>();
@@ -358,9 +412,11 @@ export function stepGame(state: GameState): void {
     }
   }
 
-  // 2e. 獻祭砲: when all 8 neighbours are friendly towers, consume them and nuke.
+  // 2e. 獻祭砲: once all 8 neighbours are friendly towers, swallow them and
+  // arm (charge) the sacrifice tower — it becomes a draggable nuke the player
+  // detonates manually (see Room.detonateSacrifice), not an in-place blast.
   for (const sac of [...state.towers]) { // snapshot: state.towers is rebuilt below
-    if (!TOWER_CONFIGS[sac.type].sacrifice || !sac.active) continue;
+    if (!TOWER_CONFIGS[sac.type].sacrifice || !sac.active || sac.charged) continue;
     const neighbours = state.towers.filter(o =>
       o.owner === sac.owner && o.id !== sac.id &&
       Math.abs(o.x - sac.x) <= 1 && Math.abs(o.y - sac.y) <= 1,
@@ -368,8 +424,7 @@ export function stepGame(state: GameState): void {
     if (neighbours.length >= 8) {
       const ids = new Set(neighbours.slice(0, 8).map(o => o.id));
       state.towers = state.towers.filter(o => !ids.has(o.id));
-      const cfg = TOWER_CONFIGS[sac.type];
-      explodeSplash(state, sac.x, sac.y, sac.owner, cfg.towerDamage, cfg.splashRadius);
+      sac.charged = true;
     }
   }
 

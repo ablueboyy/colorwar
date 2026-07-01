@@ -21,6 +21,20 @@ export interface Tower {
   level: number;
   aim: number; // radians, atan2(dy,dx) toward current target; sprite's natural orientation is "up"
   slow: number; // ticks of remaining fire-rate slow (干擾砲); 0 = normal
+  charged?: boolean; // 獻祭砲: swallowed its 8 neighbours and is armed as a draggable nuke
+}
+
+// Short-lived visual effect (jammer field / sacrifice blast) that the client
+// animates. Purely cosmetic but lives in shared state so both players see it.
+export interface Effect {
+  id: string;
+  kind: 'jammer' | 'nuke';
+  x: number;
+  y: number;
+  radius: number;
+  ttl: number;    // ticks remaining
+  maxTtl: number; // ticks it started with (for fade)
+  owner: PlayerId;
 }
 
 export interface Projectile {
@@ -64,6 +78,7 @@ export interface GameState {
   towers: Tower[];
   projectiles: Projectile[];
   barriers: Barrier[];
+  effects: Effect[];
   players: { p1: PlayerState; p2: PlayerState };
   tick: number;
   timeLeft: number;
@@ -79,7 +94,8 @@ export type ClientMessage =
   | { type: 'PLACE_TOWER'; towerType: TowerType; x: number; y: number }
   | { type: 'SELL_TOWER'; towerId: string }
   | { type: 'UPGRADE_TOWER'; towerId: string }
-  | { type: 'BOMB'; x: number; y: number };
+  | { type: 'BOMB'; x: number; y: number }
+  | { type: 'DETONATE'; towerId: string; x: number; y: number }; // fire a charged 獻祭砲
 
 export type ServerMessage =
   | { type: 'ROOM_CREATED'; code: string; playerId: PlayerId }

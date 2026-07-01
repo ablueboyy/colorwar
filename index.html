@@ -200,6 +200,13 @@
     .lobby-solo   { margin-top: 16px; text-align: center; }
     .lobby-solo .btn { min-width: 260px; }
 
+    /* Tower sprite icons (replace old letter glyphs) render crisp + centered */
+    img.lo-glyph, img.ld-glyph, img.tw-glyph, img.ti-glyph {
+      image-rendering: pixelated;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+
     #lobby-error  { color: #f87171; font-size: 0.8rem; min-height: 1.2em; text-align: center; }
     #conn-status  { font-size: 0.72rem; min-height: 1.1em; letter-spacing: 1px; text-align: center; }
     #conn-status.connecting { color: #fbbf24; }

@@ -1,7 +1,7 @@
 import type { TowerType } from './types';
 
-export const BOARD_WIDTH = 24;
-export const BOARD_HEIGHT = 16;
+export const BOARD_WIDTH = 30;
+export const BOARD_HEIGHT = 20;
 export const TICK_RATE = 20;
 export const TICK_INTERVAL_MS = 1000 / TICK_RATE;
 export const GAME_DURATION = 180;
@@ -59,7 +59,8 @@ export interface TowerConfig {
   incomePerSec?: number; // 金錢塔: extra money/sec while active
   slowFactor?: number;   // 干擾砲: enemy fire-rate reduction (0.2 = -20%)
   slowDuration?: number; // 干擾砲: slow duration in ticks
-  sacrifice?: boolean;   // 獻祭砲: consume 8 neighbour towers → nuke (uses towerDamage/splashRadius)
+  sacrifice?: boolean;   // 獻祭砲: consume 8 neighbour towers → arm a draggable nuke
+  sacrificeHpPercent?: number; // 獻祭砲: charged blast damages enemy towers by this fraction of their max HP
   active?: boolean;      // 炸彈: a click-anywhere ability, not a placed tower
   octopus?: boolean;     // 章魚砲: fire 8 bullets radially
   summonInterval?: number; // 召喚塔: ticks between spawning a basic tower
@@ -206,13 +207,13 @@ export const TOWER_CONFIGS: Record<TowerType, TowerConfig> = {
   sacrifice: {
     cost: 60, maxHp: 70,
     shootInterval: 0, range: 0, bulletSpeed: 0,
-    towerDamage: 120, splashRadius: 4,
+    towerDamage: 0, splashRadius: 4.5,
     spreadCount: 0, spreadAngleDeg: 0,
     supportRange: 0, speedBoost: 0,
     healPerTick: 0, healRange: 0,
-    sacrifice: true,
-    label: '獻祭砲', glyph: 'X', role: '犧牲爆發',
-    description: '當八個相鄰格都是己方砲台時，吞噬這 8 座砲台，原地引爆超大範圍核爆（範圍4、拆塔120）。超便宜，建議搭配基礎砲當祭品。',
+    sacrifice: true, sacrificeHpPercent: 0.5,
+    label: '獻祭砲', glyph: 'X', role: '犧牲蓄能',
+    description: '當八個相鄰格都是己方砲台時，吞噬這 8 座砲台並「蓄能」——自身變成發光核彈。之後點選它、再點地圖任意處即可投擲，大範圍染色並對敵方砲台造成其最大血量 50% 的傷害（不會整片直接清塔）。超便宜，建議搭配基礎砲當祭品。',
   },
   bomb: {
     cost: 70, maxHp: 0,

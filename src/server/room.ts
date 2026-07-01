@@ -1,6 +1,6 @@
 import { WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage, PlayerId, TowerType } from '../shared/types';
-import { createInitialState, stepGame, explodeSplash } from '../shared/gameLogic';
+import { createInitialState, stepGame, explodeSplash, explodePercent, spawnEffect } from '../shared/gameLogic';
 import {
   BOARD_WIDTH, BOARD_HEIGHT, TICK_INTERVAL_MS, TOWER_CONFIGS, SELL_REFUND_RATIO,
   LEVEL_MULTS, upgradeCostFor, MAX_TOWER_LEVEL, LOADOUT_SIZE, DISCONNECT_GRACE_MS, BOMB_COOLDOWN_TICKS,
@@ -120,6 +120,20 @@ export class Room {
     else if (msg.type === 'SELL_TOWER') this.sellTower(player.id, msg.towerId);
     else if (msg.type === 'UPGRADE_TOWER') this.upgradeTower(player.id, msg.towerId);
     else if (msg.type === 'BOMB') this.bomb(player.id, msg.x, msg.y);
+    else if (msg.type === 'DETONATE') this.detonateSacrifice(player.id, msg.towerId, msg.x, msg.y);
+  }
+
+  // Fire a charged 獻祭砲: consume the armed tower and blast the target cell,
+  // painting the radius and chipping enemy towers by a % of their max HP.
+  private detonateSacrifice(pid: PlayerId, towerId: string, x: number, y: number): void {
+    const s = this.state;
+    if (x < 0 || x >= BOARD_WIDTH || y < 0 || y >= BOARD_HEIGHT) return;
+    const idx = s.towers.findIndex(t => t.id === towerId && t.owner === pid && t.charged);
+    if (idx === -1) return;
+    const cfg = TOWER_CONFIGS.sacrifice;
+    s.towers.splice(idx, 1);
+    explodePercent(s, x, y, pid, cfg.sacrificeHpPercent ?? 0.5, cfg.splashRadius);
+    spawnEffect(s, 'nuke', x, y, cfg.splashRadius, 30, pid);
   }
 
   private placeTower(pid: PlayerId, type: TowerType, x: number, y: number): void {
