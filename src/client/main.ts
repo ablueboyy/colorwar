@@ -1,5 +1,5 @@
 import type { GameState, PlayerId, Tower, TowerType, ServerMessage } from '../shared/types';
-import { TOWER_CONFIGS, LEVEL_MULTS, UPGRADE_COST_RATIO, MAX_TOWER_LEVEL, SELL_REFUND_RATIO, LOADOUT_SIZE, TICK_RATE, BOARD_WIDTH, BOARD_HEIGHT } from '../shared/config';
+import { TOWER_CONFIGS, LEVEL_MULTS, upgradeCostFor, MAX_TOWER_LEVEL, SELL_REFUND_RATIO, LOADOUT_SIZE, TICK_RATE, BOARD_WIDTH, BOARD_HEIGHT } from '../shared/config';
 import { WsClient, type ConnStatus } from './wsClient';
 import { Renderer, CELL_SIZE, CANVAS_W, CANVAS_H } from './renderer';
 
@@ -324,7 +324,7 @@ function updateTowerActions(): void {
   const money = myId ? (currentState.players[myId].money ?? 0) : 0;
   const canUp = tower.level < MAX_TOWER_LEVEL;
   if (canUp) {
-    const upgCost = Math.floor(cfg.cost * UPGRADE_COST_RATIO);
+    const upgCost = upgradeCostFor(cfg);
     actUpgradeBtn.textContent = `▲ 升級 $${upgCost}`;
     actUpgradeBtn.disabled = money < upgCost;
   } else {

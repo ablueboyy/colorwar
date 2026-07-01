@@ -1,5 +1,5 @@
 import type { GameState, PlayerId, TowerType } from '../shared/types';
-import { BOARD_WIDTH, BOARD_HEIGHT, TOWER_CONFIGS, MAX_TOWER_LEVEL, UPGRADE_COST_RATIO } from '../shared/config';
+import { BOARD_WIDTH, BOARD_HEIGHT, TOWER_CONFIGS, MAX_TOWER_LEVEL, upgradeCostFor } from '../shared/config';
 
 // How often (in game ticks) the bot makes a decision. 20 ticks = 1s.
 export const BOT_DECISION_TICKS = 12;
@@ -42,7 +42,7 @@ export function decideBotAction(state: GameState, pid: PlayerId, loadout: TowerT
     );
     if (upgradable.length) {
       const t = pickRandom(upgradable);
-      const cost = Math.floor(TOWER_CONFIGS[t.type].cost * UPGRADE_COST_RATIO);
+      const cost = upgradeCostFor(TOWER_CONFIGS[t.type]);
       if (money >= cost) return { kind: 'upgrade', towerId: t.id };
     }
   }

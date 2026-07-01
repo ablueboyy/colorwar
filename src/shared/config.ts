@@ -9,6 +9,10 @@ export const KO_THRESHOLD = 0.8;
 
 export const MAX_TOWER_LEVEL = 3;
 export const UPGRADE_COST_RATIO = 0.5;
+
+// 金錢塔: each level above 1 adds this fraction of its base income (L2 +25%,
+// L3 +50%) — a mild economic bump, not a runaway.
+export const MONEY_LEVEL_INCOME_BONUS = 0.25;
 export const LEVEL_MULTS: { range: number; speed: number; dmg: number; hp: number }[] = [
   { range: 1.0,  speed: 1.0,  dmg: 1.0,  hp: 1.0 },
   { range: 1.2,  speed: 1.35, dmg: 1.4,  hp: 1.5 },
@@ -63,6 +67,7 @@ export interface TowerConfig {
   enchantInterval?: number; // 附魔塔: ticks between upgrading a random nearby ally
   enchantRange?: number;    // 附魔塔: range for the random upgrade
   noUpgrade?: boolean;   // tower can't be manually/auto upgraded (附魔塔)
+  upgradeCostRatio?: number; // override UPGRADE_COST_RATIO (召喚塔 pays full price)
   label: string;
   glyph: string;
   role: string;
@@ -236,8 +241,9 @@ export const TOWER_CONFIGS: Record<TowerType, TowerConfig> = {
     supportRange: 0, speedBoost: 0,
     healPerTick: 0, healRange: 0,
     summonInterval: 160,
+    upgradeCostRatio: 1, // full-price upgrades:升級後召喚的基礎砲直接同級
     label: '召喚塔', glyph: 'M', role: '召喚增援',
-    description: '不攻擊。每 8 秒在旁邊的己方空格召喚一座基礎砲，慢慢鋪出砲海。本體被拆就停止召喚。',
+    description: '不攻擊。每 8 秒在旁邊的己方空格召喚一座基礎砲，慢慢鋪出砲海。本體被拆就停止召喚。升級後召喚出的基礎砲會直接是同等級（升級為原價）。',
   },
   magnet: {
     cost: 130, maxHp: 200,
@@ -284,3 +290,9 @@ export const TOWER_CONFIGS: Record<TowerType, TowerConfig> = {
     description: '不攻擊。每 10 秒隨機把周圍一座友方砲台升一級。自身無法被升級，需要保護。',
   },
 };
+
+// Cost to upgrade one level of the given tower. Most towers pay half their base
+// cost; those with an upgradeCostRatio override (召喚塔) pay a different rate.
+export function upgradeCostFor(cfg: TowerConfig): number {
+  return Math.floor(cfg.cost * (cfg.upgradeCostRatio ?? UPGRADE_COST_RATIO));
+}

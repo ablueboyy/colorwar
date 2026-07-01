@@ -3,7 +3,7 @@ import type { ClientMessage, ServerMessage, PlayerId, TowerType } from '../share
 import { createInitialState, stepGame, explodeSplash } from '../shared/gameLogic';
 import {
   BOARD_WIDTH, BOARD_HEIGHT, TICK_INTERVAL_MS, TOWER_CONFIGS, SELL_REFUND_RATIO,
-  LEVEL_MULTS, UPGRADE_COST_RATIO, MAX_TOWER_LEVEL, LOADOUT_SIZE, DISCONNECT_GRACE_MS,
+  LEVEL_MULTS, upgradeCostFor, MAX_TOWER_LEVEL, LOADOUT_SIZE, DISCONNECT_GRACE_MS,
 } from '../shared/config';
 import { decideBotAction, BOT_DECISION_TICKS } from './ai';
 
@@ -177,7 +177,7 @@ export class Room {
     if (!tower || tower.level >= MAX_TOWER_LEVEL) return;
     if (TOWER_CONFIGS[tower.type].noUpgrade) return; // 附魔塔 can't be upgraded
     const cfg = TOWER_CONFIGS[tower.type];
-    const cost = Math.floor(cfg.cost * UPGRADE_COST_RATIO);
+    const cost = upgradeCostFor(cfg);
     if (this.state.players[pid].money < cost) return;
     this.state.players[pid].money -= cost;
     tower.level++;

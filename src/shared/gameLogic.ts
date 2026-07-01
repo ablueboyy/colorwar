@@ -3,6 +3,7 @@ import {
   BOARD_WIDTH, BOARD_HEIGHT, TICK_RATE, GAME_DURATION, KO_THRESHOLD,
   BASE_INCOME_PER_SECOND, CELL_INCOME_PER_SECOND, CELL_INCOME_CAP,
   INITIAL_P1_COLS, INITIAL_P2_COLS, STARTING_MONEY, TOWER_CONFIGS, LEVEL_MULTS, MAX_TOWER_LEVEL,
+  MONEY_LEVEL_INCOME_BONUS,
 } from './config';
 
 let nextId = 0;
@@ -182,12 +183,13 @@ function applyJammer(state: GameState, cx: number, cy: number, proj: Projectile)
 }
 
 // Create a tower (used by 召喚塔 spawns).
-function makeTower(owner: PlayerId, type: Tower['type'], x: number, y: number): Tower {
+function makeTower(owner: PlayerId, type: Tower['type'], x: number, y: number, level = 1): Tower {
   const cfg = TOWER_CONFIGS[type];
+  const maxHp = Math.round(cfg.maxHp * (LEVEL_MULTS[level - 1] ?? LEVEL_MULTS[0]).hp);
   return {
     id: uid(), owner, type, x, y,
-    hp: cfg.maxHp, maxHp: cfg.maxHp,
-    cooldown: 0, active: true, level: 1, aim: -Math.PI / 2, slow: 0,
+    hp: maxHp, maxHp,
+    cooldown: 0, active: true, level, aim: -Math.PI / 2, slow: 0,
   };
 }
 
@@ -325,7 +327,8 @@ export function stepGame(state: GameState): void {
     if (--t.cooldown > 0) continue;
     const spot = findEmptyAdjacent(state, t);
     if (spot) {
-      state.towers.push(makeTower(t.owner, 'basic', spot.x, spot.y));
+      // Summoned basic towers inherit the 召喚塔's current level.
+      state.towers.push(makeTower(t.owner, 'basic', spot.x, spot.y, t.level));
       t.cooldown = cfg.summonInterval;
     } else {
       t.cooldown = 0; // no room — retry next tick
@@ -498,10 +501,13 @@ export function stepGame(state: GameState): void {
     const cellBonus = Math.min(cells * CELL_INCOME_PER_SECOND, CELL_INCOME_CAP);
     player.money += (BASE_INCOME_PER_SECOND + cellBonus) * dt;
   }
-  // 金錢塔: extra income while active.
+  // 金錢塔: extra income while active, scaling mildly with level.
   for (const t of state.towers) {
     const inc = TOWER_CONFIGS[t.type].incomePerSec;
-    if (inc && t.active) state.players[t.owner].money += inc * dt;
+    if (inc && t.active) {
+      const levelMult = 1 + MONEY_LEVEL_INCOME_BONUS * (t.level - 1);
+      state.players[t.owner].money += inc * levelMult * dt;
+    }
   }
 
   // 5. Win condition
