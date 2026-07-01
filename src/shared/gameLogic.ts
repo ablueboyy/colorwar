@@ -180,6 +180,7 @@ export function explodeSplash(
       if (state.board[ny][nx] !== owner) state.board[ny][nx] = owner;
     }
   }
+  spawnEffect(state, 'blast', cx, cy, splashRadius, 12, owner); // ~0.6s flash
 }
 
 // 獻祭砲 charged blast: paints the radius and chips every enemy tower by a
@@ -210,7 +211,7 @@ export function explodePercent(
 
 // Push a short-lived cosmetic effect for the client to animate.
 export function spawnEffect(
-  state: GameState, kind: 'jammer' | 'nuke', x: number, y: number,
+  state: GameState, kind: 'jammer' | 'nuke' | 'blast', x: number, y: number,
   radius: number, ttl: number, owner: PlayerId,
 ): void {
   state.effects.push({ id: uid(), kind, x, y, radius, ttl, maxTtl: ttl, owner });

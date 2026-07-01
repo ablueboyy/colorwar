@@ -56,8 +56,7 @@ export function bomb(s: GameState, loadout: TowerType[], pid: PlayerId, x: numbe
   if (s.players[pid].money < cfg.cost) return;
   s.players[pid].money -= cfg.cost;
   s.players[pid].bombCooldown = BOMB_COOLDOWN_TICKS;
-  explodeSplash(s, x, y, pid, cfg.towerDamage, cfg.splashRadius);
-  spawnEffect(s, 'nuke', x, y, cfg.splashRadius, 18, pid);
+  explodeSplash(s, x, y, pid, cfg.towerDamage, cfg.splashRadius); // spawns its own blast effect
 }
 
 export function upgradeTower(s: GameState, pid: PlayerId, towerId: string): void {

@@ -46,12 +46,14 @@ export class Renderer {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
+    this.updateSparks(state);
     this.drawBoard(state, myId, selectedTower, hovered);
     this.drawRangeCircles(state, selectedTowerId);
     this.drawEffects(state);
     this.drawBarriers(state);
     this.drawTowers(state, myId, selectedTowerId);
     this.drawProjectiles(state);
+    this.drawSparks();
     if (armedBlast) this.drawArmedBlast(armedBlast);
 
     if (state.phase === 'ended') this.drawEndOverlay(state);
@@ -104,18 +106,67 @@ export class Renderer {
           ctx.fillRect(cx + Math.cos(a) * rr - 1.5, cy + Math.sin(a) * rr - 1.5, 3, 3);
         }
         ctx.restore();
-      } else { // nuke: bright expanding shockwave
+      } else if (e.kind === 'nuke') { // 獻祭砲: big golden shockwave
         ctx.save();
         const grow = 0.3 + 0.7 * (1 - life);
         ctx.globalAlpha = Math.max(0, life);
         ctx.strokeStyle = '#fde68a'; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.arc(cx, cy, R * grow, 0, Math.PI * 2); ctx.stroke();
-        ctx.globalAlpha = 0.25 * life;
+        ctx.globalAlpha = 0.28 * life;
         ctx.fillStyle = '#fbbf24';
         ctx.beginPath(); ctx.arc(cx, cy, R * grow, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
+      } else { // blast: quick owner-coloured explosion (splash weapons / 炸彈)
+        ctx.save();
+        const grow = 0.35 + 0.65 * (1 - life);
+        ctx.globalAlpha = 0.5 * life;
+        ctx.fillStyle = p1 ? '#93c5fd' : '#fca5a5';
+        ctx.beginPath(); ctx.arc(cx, cy, R * grow, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = Math.max(0, life);
+        ctx.strokeStyle = '#fef3c7'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(cx, cy, R * grow, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
       }
     }
+  }
+
+  // ── Client-only impact sparks (not synced) ──────────────────────────────────
+  // A projectile that vanishes between STATE updates has hit or expired; throw a
+  // few short-lived sparks at its last spot so bullets feel like they land.
+  private lastProj = new Map<string, { x: number; y: number; owner: PlayerId }>();
+  private sparks: { x: number; y: number; vx: number; vy: number; life: number; p1: boolean }[] = [];
+
+  private updateSparks(state: GameState): void {
+    const S = CELL_SIZE;
+    const alive = new Set(state.projectiles.map(p => p.id));
+    for (const [id, p] of this.lastProj) {
+      if (alive.has(id)) continue;
+      for (let i = 0; i < 5; i++) {
+        const a = Math.random() * Math.PI * 2, sp = 0.4 + Math.random() * 1.1;
+        this.sparks.push({
+          x: p.x * S, y: p.y * S,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          life: 1, p1: p.owner === 'p1',
+        });
+      }
+    }
+    this.lastProj.clear();
+    for (const p of state.projectiles) this.lastProj.set(p.id, { x: p.x, y: p.y, owner: p.owner });
+    if (this.sparks.length > 400) this.sparks.splice(0, this.sparks.length - 400); // safety cap
+  }
+
+  private drawSparks(): void {
+    const ctx = this.ctx;
+    ctx.save();
+    for (const s of this.sparks) {
+      s.x += s.vx; s.y += s.vy; s.life -= 0.08;
+      if (s.life <= 0) continue;
+      ctx.globalAlpha = s.life;
+      ctx.fillStyle = s.p1 ? '#dbeafe' : '#fee2e2';
+      ctx.fillRect(s.x - 1, s.y - 1, 2, 2);
+    }
+    ctx.restore();
+    this.sparks = this.sparks.filter(s => s.life > 0);
   }
 
   private drawRangeCircles(state: GameState, selectedTowerId: string | null): void {

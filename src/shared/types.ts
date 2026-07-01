@@ -28,7 +28,7 @@ export interface Tower {
 // animates. Purely cosmetic but lives in shared state so both players see it.
 export interface Effect {
   id: string;
-  kind: 'jammer' | 'nuke';
+  kind: 'jammer' | 'nuke' | 'blast';
   x: number;
   y: number;
   radius: number;
