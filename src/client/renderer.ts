@@ -53,7 +53,9 @@ export class Renderer {
 
   private drawRangeCircles(state: GameState, selectedTowerId: string | null): void {
     for (const t of state.towers) {
-      if (t.type === 'support' || t.type === 'repair' || t.id === selectedTowerId) {
+      // Aura towers (加速器/維修車/磁力塔) always show their reach; everything
+      // else only reveals its range while selected.
+      if (t.type === 'support' || t.type === 'repair' || t.type === 'magnet' || t.id === selectedTowerId) {
         this.drawRangeCircle(t);
       }
     }
@@ -65,7 +67,9 @@ export class Renderer {
     const cfg = TOWER_CONFIGS[tower.type];
     const m = LEVEL_MULTS[tower.level - 1] ?? LEVEL_MULTS[0];
     const baseRange = Math.max(cfg.range, cfg.supportRange, cfg.healRange);
-    const effRange = baseRange * m.range;
+    let effRange = baseRange * m.range;
+    // 磁力塔's pull radius is a flat magnetRange (it doesn't scale with level).
+    if (cfg.magnetRange) effRange = Math.max(effRange, cfg.magnetRange);
     if (effRange <= 0) return;
 
     const cx = (tower.x + 0.5) * S;
