@@ -197,6 +197,9 @@
     .lobby-card input:focus   { outline: none; border-color: #3b82f6; }
     .lobby-card input::placeholder { color: #1e3655; letter-spacing: 6px; }
 
+    .lobby-solo   { margin-top: 16px; text-align: center; }
+    .lobby-solo .btn { min-width: 260px; }
+
     #lobby-error  { color: #f87171; font-size: 0.8rem; min-height: 1.2em; text-align: center; }
     #conn-status  { font-size: 0.72rem; min-height: 1.1em; letter-spacing: 1px; text-align: center; }
     #conn-status.connecting { color: #fbbf24; }
@@ -588,9 +591,13 @@
       <div class="lobby-divider">OR</div>
       <div class="lobby-card">
         <div class="lobby-card-title">Join Game</div>
-        <input id="code-input" type="text" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" />
+        <input id="code-input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="0000" autocomplete="off" spellcheck="false" />
         <button id="join-btn" class="btn">Join Room</button>
       </div>
+    </div>
+    <div class="lobby-solo">
+      <button id="solo-btn" class="btn primary">🤖 單人對戰電腦</button>
+      <div style="font-size:0.65rem;color:#1e3655;letter-spacing:2px;margin-top:5px">立即開打，不需對手</div>
     </div>
     <div id="lobby-error"></div>
     <div id="conn-status"></div>

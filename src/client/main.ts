@@ -10,6 +10,7 @@ const gameEl = document.getElementById('game-container')!;
 const gameOverEl = document.getElementById('game-over')!;
 
 const createBtn = document.getElementById('create-btn') as HTMLButtonElement;
+const soloBtn = document.getElementById('solo-btn') as HTMLButtonElement;
 const joinBtn = document.getElementById('join-btn') as HTMLButtonElement;
 const codeInput = document.getElementById('code-input') as HTMLInputElement;
 const lobbyError = document.getElementById('lobby-error')!;
@@ -208,6 +209,7 @@ function refreshLoadoutUI(): void {
 function refreshLobby(): void {
   const ready = wsOpen && myLoadout.size === LOADOUT_SIZE;
   createBtn.disabled = !ready;
+  soloBtn.disabled = !ready;
   joinBtn.disabled = !ready;
 }
 
@@ -568,11 +570,21 @@ createBtn.addEventListener('click', () => {
   ws.send({ type: 'CREATE_ROOM', loadout: currentLoadout() });
 });
 
+soloBtn.addEventListener('click', () => {
+  lobbyError.textContent = '';
+  ws.send({ type: 'CREATE_SOLO', loadout: currentLoadout() });
+});
+
 joinBtn.addEventListener('click', () => {
-  const code = codeInput.value.trim().toUpperCase();
-  if (!code) { lobbyError.textContent = 'Enter a room code'; return; }
+  const code = codeInput.value.trim();
+  if (!code) { lobbyError.textContent = '請輸入房間代號'; return; }
   lobbyError.textContent = '';
   ws.send({ type: 'JOIN_ROOM', code, loadout: currentLoadout() });
+});
+
+// Room codes are numeric now — keep the input to digits only.
+codeInput.addEventListener('input', () => {
+  codeInput.value = codeInput.value.replace(/\D/g, '');
 });
 
 codeInput.addEventListener('keydown', (e) => {

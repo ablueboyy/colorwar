@@ -3,6 +3,7 @@ import { readFile } from 'fs/promises';
 import { join, normalize, extname, sep } from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Room } from './room';
+import { BOT_LOADOUT } from './ai';
 import type { ClientMessage, ServerMessage } from '../shared/types';
 
 const PORT = Number(process.env.PORT ?? 3001);
@@ -35,9 +36,8 @@ const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
 const rooms = new Map<string, Room>();
 
 function genCode(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
-  for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < 4; i++) code += Math.floor(Math.random() * 10);
   return rooms.has(code) ? genCode() : code;
 }
 
@@ -67,6 +67,17 @@ wss.on('connection', (ws: LiveSocket) => {
       const pid = room.addPlayer(ws, msg.loadout);
       send(ws, { type: 'ROOM_CREATED', code, playerId: pid });
       send(ws, { type: 'WAITING_FOR_OPPONENT' });
+    } else if (msg.type === 'CREATE_SOLO') {
+      if (room) return;
+      const code = genCode();
+      const created = new Room(code, () => rooms.delete(code));
+      rooms.set(code, created);
+      room = created;
+      // Human takes p1; ROOM_CREATED (no WAITING) lets the client store the code
+      // for reconnects, then the bot joins as p2 and the match starts at once.
+      const pid = room.addPlayer(ws, msg.loadout);
+      send(ws, { type: 'ROOM_CREATED', code, playerId: pid });
+      room.addBot(BOT_LOADOUT);
     } else if (msg.type === 'JOIN_ROOM') {
       if (room) return;
       const target = rooms.get(msg.code.toUpperCase());

@@ -5,12 +5,14 @@ import {
   BOARD_WIDTH, BOARD_HEIGHT, TICK_INTERVAL_MS, TOWER_CONFIGS, SELL_REFUND_RATIO,
   LEVEL_MULTS, UPGRADE_COST_RATIO, MAX_TOWER_LEVEL, LOADOUT_SIZE, DISCONNECT_GRACE_MS,
 } from '../shared/config';
+import { decideBotAction, BOT_DECISION_TICKS } from './ai';
 
 interface PlayerConn {
   ws: WebSocket | null; // null while the slot is disconnected but within grace
   id: PlayerId;
   loadout: TowerType[];
   connected: boolean;
+  isAi?: boolean; // slot driven by the built-in bot (single-player)
 }
 
 function sanitizeLoadout(raw: TowerType[] | undefined): TowerType[] {
@@ -31,6 +33,9 @@ export class Room {
   private paused = false;
   private disposed = false;
   private readonly onDispose: () => void;
+  // Single-player: the bot-controlled slot (if any) and its decision counter.
+  private bot: { pid: PlayerId; loadout: TowerType[] } | null = null;
+  private botTick = 0;
 
   constructor(code: string, onDispose: () => void) {
     this.code = code;
@@ -47,6 +52,15 @@ export class Room {
     if (this.players.length === 2) this.startGame();
 
     return id;
+  }
+
+  // Add a bot as the second player and kick the match off immediately.
+  addBot(loadout: TowerType[]): void {
+    const id: PlayerId = this.players.length === 0 ? 'p1' : 'p2';
+    const sane = sanitizeLoadout(loadout);
+    this.players.push({ ws: null, id, loadout: sane, connected: true, isAi: true });
+    this.bot = { pid: id, loadout: sane };
+    if (this.players.length === 2) this.startGame();
   }
 
   // Re-bind a dropped player's slot to a fresh socket during the grace window.
@@ -197,12 +211,25 @@ export class Room {
 
     stepGame(this.state);
 
+    if (this.bot) this.stepBot();
+
     this.broadcast({ type: 'STATE', state: this.state });
 
     if ((this.state.phase as string) === 'ended') {
       this.broadcast({ type: 'GAME_OVER', winner: this.state.winner!, finalState: this.state });
       this.dispose();
     }
+  }
+
+  // Drive the bot slot: once per decision interval, apply one proposed action
+  // through the same validated paths a human's messages would take.
+  private stepBot(): void {
+    if (!this.bot) return;
+    if (++this.botTick % BOT_DECISION_TICKS !== 0) return;
+    const action = decideBotAction(this.state, this.bot.pid, this.bot.loadout);
+    if (!action) return;
+    if (action.kind === 'place') this.placeTower(this.bot.pid, action.type, action.x, action.y);
+    else this.upgradeTower(this.bot.pid, action.towerId);
   }
 
   // Award the match to `winner` because their opponent failed to reconnect.
