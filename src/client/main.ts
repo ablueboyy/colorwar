@@ -1,4 +1,4 @@
-import type { GameState, PlayerId, Tower, TowerType, ServerMessage } from '../shared/types';
+import type { GameState, PlayerId, Tower, TowerType, ServerMessage, Difficulty } from '../shared/types';
 import { TOWER_CONFIGS, LEVEL_MULTS, upgradeCostFor, MAX_TOWER_LEVEL, SELL_REFUND_RATIO, LOADOUT_SIZE, TICK_RATE, BOARD_WIDTH, BOARD_HEIGHT } from '../shared/config';
 import { WsClient, type ConnStatus } from './wsClient';
 import { Renderer, CELL_SIZE, CANVAS_W, CANVAS_H } from './renderer';
@@ -610,9 +610,17 @@ createBtn.addEventListener('click', () => {
   ws.send({ type: 'CREATE_ROOM', loadout: currentLoadout() });
 });
 
+let botDifficulty: Difficulty = 'normal';
+document.querySelectorAll<HTMLButtonElement>('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    botDifficulty = btn.dataset.diff as Difficulty;
+    document.querySelectorAll('.diff-btn').forEach(b => b.classList.toggle('selected', b === btn));
+  });
+});
+
 soloBtn.addEventListener('click', () => {
   lobbyError.textContent = '';
-  ws.send({ type: 'CREATE_SOLO', loadout: currentLoadout() });
+  ws.send({ type: 'CREATE_SOLO', loadout: currentLoadout(), difficulty: botDifficulty });
 });
 
 joinBtn.addEventListener('click', () => {

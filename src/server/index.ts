@@ -77,7 +77,7 @@ wss.on('connection', (ws: LiveSocket) => {
       // for reconnects, then the bot joins as p2 and the match starts at once.
       const pid = room.addPlayer(ws, msg.loadout);
       send(ws, { type: 'ROOM_CREATED', code, playerId: pid });
-      room.addBot(BOT_LOADOUT);
+      room.addBot(BOT_LOADOUT, msg.difficulty ?? 'normal');
     } else if (msg.type === 'JOIN_ROOM') {
       if (room) return;
       const target = rooms.get(msg.code.toUpperCase());

@@ -7,6 +7,7 @@ export type TowerType =
   | 'money' | 'jammer' | 'sacrifice' | 'bomb' | 'octopus'
   | 'summon' | 'magnet' | 'decoy' | 'banner' | 'enchant';
 export type GamePhase = 'waiting' | 'playing' | 'ended';
+export type Difficulty = 'easy' | 'normal' | 'hard';
 
 export interface Tower {
   id: string;
@@ -88,7 +89,7 @@ export interface GameState {
 
 export type ClientMessage =
   | { type: 'CREATE_ROOM'; loadout: TowerType[] }
-  | { type: 'CREATE_SOLO'; loadout: TowerType[] }
+  | { type: 'CREATE_SOLO'; loadout: TowerType[]; difficulty?: Difficulty }
   | { type: 'JOIN_ROOM'; code: string; loadout: TowerType[] }
   | { type: 'REJOIN_ROOM'; code: string; playerId: PlayerId }
   | { type: 'PLACE_TOWER'; towerType: TowerType; x: number; y: number }

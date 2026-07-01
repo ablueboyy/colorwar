@@ -1,9 +1,9 @@
 import { WebSocket } from 'ws';
-import type { ClientMessage, ServerMessage, PlayerId, TowerType } from '../shared/types';
+import type { ClientMessage, ServerMessage, PlayerId, TowerType, Difficulty } from '../shared/types';
 import { createInitialState, stepGame } from '../shared/gameLogic';
 import { TICK_INTERVAL_MS, TOWER_CONFIGS, LOADOUT_SIZE, DISCONNECT_GRACE_MS } from '../shared/config';
 import { placeTower, bomb, upgradeTower, sellTower, detonateSacrifice } from '../shared/actions';
-import { decideBotAction, BOT_DECISION_TICKS } from './ai';
+import { decideBotAction, BOT_DIFFICULTY } from './ai';
 
 interface PlayerConn {
   ws: WebSocket | null; // null while the slot is disconnected but within grace
@@ -32,7 +32,7 @@ export class Room {
   private disposed = false;
   private readonly onDispose: () => void;
   // Single-player: the bot-controlled slot (if any) and its decision counter.
-  private bot: { pid: PlayerId; loadout: TowerType[] } | null = null;
+  private bot: { pid: PlayerId; loadout: TowerType[]; difficulty: Difficulty; decisionTicks: number } | null = null;
   private botTick = 0;
 
   constructor(code: string, onDispose: () => void) {
@@ -53,11 +53,11 @@ export class Room {
   }
 
   // Add a bot as the second player and kick the match off immediately.
-  addBot(loadout: TowerType[]): void {
+  addBot(loadout: TowerType[], difficulty: Difficulty = 'normal'): void {
     const id: PlayerId = this.players.length === 0 ? 'p1' : 'p2';
     const sane = sanitizeLoadout(loadout);
     this.players.push({ ws: null, id, loadout: sane, connected: true, isAi: true });
-    this.bot = { pid: id, loadout: sane };
+    this.bot = { pid: id, loadout: sane, difficulty, decisionTicks: BOT_DIFFICULTY[difficulty].decisionTicks };
     if (this.players.length === 2) this.startGame();
   }
 
@@ -152,11 +152,14 @@ export class Room {
   // through the same validated paths a human's messages would take.
   private stepBot(): void {
     if (!this.bot) return;
-    if (++this.botTick % BOT_DECISION_TICKS !== 0) return;
-    const action = decideBotAction(this.state, this.bot.pid, this.bot.loadout);
+    if (++this.botTick % this.bot.decisionTicks !== 0) return;
+    const { pid, loadout, difficulty } = this.bot;
+    const action = decideBotAction(this.state, pid, loadout, difficulty);
     if (!action) return;
-    if (action.kind === 'place') placeTower(this.state, this.bot.loadout, this.bot.pid, action.type, action.x, action.y);
-    else upgradeTower(this.state, this.bot.pid, action.towerId);
+    if (action.kind === 'place') placeTower(this.state, loadout, pid, action.type, action.x, action.y);
+    else if (action.kind === 'upgrade') upgradeTower(this.state, pid, action.towerId);
+    else if (action.kind === 'bomb') bomb(this.state, loadout, pid, action.x, action.y);
+    else if (action.kind === 'detonate') detonateSacrifice(this.state, pid, action.towerId, action.x, action.y);
   }
 
   // Award the match to `winner` because their opponent failed to reconnect.
