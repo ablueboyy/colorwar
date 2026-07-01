@@ -73,6 +73,7 @@ export interface GameState {
 export type ClientMessage =
   | { type: 'CREATE_ROOM'; loadout: TowerType[] }
   | { type: 'JOIN_ROOM'; code: string; loadout: TowerType[] }
+  | { type: 'REJOIN_ROOM'; code: string; playerId: PlayerId }
   | { type: 'PLACE_TOWER'; towerType: TowerType; x: number; y: number }
   | { type: 'SELL_TOWER'; towerId: string }
   | { type: 'UPGRADE_TOWER'; towerId: string }
@@ -84,5 +85,9 @@ export type ServerMessage =
   | { type: 'WAITING_FOR_OPPONENT' }
   | { type: 'GAME_START'; state: GameState; playerId: PlayerId }
   | { type: 'STATE'; state: GameState }
-  | { type: 'GAME_OVER'; winner: PlayerId | 'draw'; finalState: GameState }
+  // Opponent dropped mid-match; a grace timer is running for them to rejoin.
+  | { type: 'OPPONENT_DISCONNECTED'; graceMs: number }
+  // Opponent rebound their socket within the grace window.
+  | { type: 'OPPONENT_RECONNECTED' }
+  | { type: 'GAME_OVER'; winner: PlayerId | 'draw'; finalState: GameState; reason?: 'forfeit' }
   | { type: 'ERROR'; message: string };

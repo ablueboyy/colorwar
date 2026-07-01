@@ -1,5 +1,5 @@
 import type { GameState, PlayerId, Tower, TowerType, ServerMessage } from '../shared/types';
-import { TOWER_CONFIGS, LEVEL_MULTS, UPGRADE_COST_RATIO, MAX_TOWER_LEVEL, SELL_REFUND_RATIO, LOADOUT_SIZE, TICK_RATE } from '../shared/config';
+import { TOWER_CONFIGS, LEVEL_MULTS, UPGRADE_COST_RATIO, MAX_TOWER_LEVEL, SELL_REFUND_RATIO, LOADOUT_SIZE, TICK_RATE, BOARD_WIDTH, BOARD_HEIGHT } from '../shared/config';
 import { WsClient, type ConnStatus } from './wsClient';
 import { Renderer, CELL_SIZE, CANVAS_W, CANVAS_H } from './renderer';
 
@@ -60,6 +60,10 @@ const towerActionsEl = document.getElementById('tower-actions') as HTMLElement;
 const actUpgradeBtn  = document.getElementById('act-upgrade')   as HTMLButtonElement;
 const actSellBtn     = document.getElementById('act-sell')      as HTMLButtonElement;
 
+const netBannerEl    = document.getElementById('net-banner')    as HTMLElement;
+
+const TOTAL_CELLS = BOARD_WIDTH * BOARD_HEIGHT;
+
 // ── State ────────────────────────────────────────────────────────────────────
 const ws = new WsClient();
 const renderer = new Renderer(canvas);
@@ -71,6 +75,12 @@ let selectedTowerId: string | null = null;
 let hovered: { x: number; y: number } | null = null;
 let myRoomCode = '';
 let wsOpen = false;
+
+// Network-resilience state: whether we're mid-match (so a socket drop should
+// trigger a REJOIN), and the two banner conditions.
+let inGame = false;
+let selfDown = false; // our own socket is down while in a match
+let oppDown = false;  // opponent dropped and we're waiting on their grace window
 
 // Pre-game loadout: which towers this player brings into the match.
 const DEFAULT_LOADOUT: TowerType[] = ['basic', 'rapid', 'spread', 'sniper', 'artillery', 'splash', 'support', 'repair'];
@@ -87,6 +97,21 @@ function showScreen(name: 'lobby' | 'waiting' | 'game' | 'gameover'): void {
   waitEl.style.display = name === 'waiting' ? '' : 'none';
   gameEl.style.display = name === 'game' ? '' : 'none';
   gameOverEl.style.display = name === 'gameover' ? '' : 'none';
+}
+
+// Show/hide the in-game network banner. Our own outage takes priority over an
+// opponent outage, since we can't do anything until we're back.
+function updateNetBanner(): void {
+  if (!inGame) { netBannerEl.style.display = 'none'; return; }
+  if (selfDown) {
+    netBannerEl.textContent = '⚠ 與伺服器連線中斷，正在重新連線…';
+    netBannerEl.style.display = '';
+  } else if (oppDown) {
+    netBannerEl.textContent = '⚠ 對手連線中斷，等待重新連線…';
+    netBannerEl.style.display = '';
+  } else {
+    netBannerEl.style.display = 'none';
+  }
 }
 
 // ── Loadout picker (lobby) ────────────────────────────────────────────────────
@@ -426,7 +451,7 @@ function updateHud(state: GameState): void {
   if (t < 30) timerEl.classList.add('warning');
   else timerEl.classList.remove('warning');
 
-  const total = 24 * 16;
+  const total = TOTAL_CELLS;
   p1MoneyEl.textContent = `$${Math.floor(state.players.p1.money)}`;
   p2MoneyEl.textContent = `$${Math.floor(state.players.p2.money)}`;
   p1CellsEl.textContent = `${state.players.p1.cells} (${Math.round(state.players.p1.cells / total * 100)}%)`;
@@ -461,6 +486,7 @@ ws.on((msg: ServerMessage) => {
       break;
     case 'ROOM_JOINED':
       myId = msg.playerId;
+      myRoomCode = msg.code.toUpperCase();
       break;
     case 'GAME_START':
       myId = msg.playerId;
@@ -472,6 +498,10 @@ ws.on((msg: ServerMessage) => {
       myIdLabel.style.color = myId === 'p1' ? '#60a5fa' : '#f87171';
       buildTowerPanel();
       showScreen('game');
+      // GAME_START also arrives as a resync after our own rejoin.
+      inGame = true;
+      oppDown = false;
+      updateNetBanner();
       break;
     case 'STATE':
       currentState = msg.state;
@@ -481,16 +511,29 @@ ws.on((msg: ServerMessage) => {
         else deselectTower();
       }
       break;
+    case 'OPPONENT_DISCONNECTED':
+      oppDown = true;
+      updateNetBanner();
+      break;
+    case 'OPPONENT_RECONNECTED':
+      oppDown = false;
+      updateNetBanner();
+      break;
     case 'GAME_OVER': {
+      inGame = false;
+      oppDown = false;
+      updateNetBanner();
       selectedTowerId = null;
       towerActionsEl.style.display = 'none';
       currentState = msg.finalState;
       const w = msg.winner;
-      overTitle.textContent = w === 'draw' ? 'DRAW!' : w === myId ? 'YOU WIN!' : 'YOU LOSE!';
+      const forfeit = msg.reason === 'forfeit';
+      if (forfeit && w === myId) overTitle.textContent = '對手離開，你獲勝！';
+      else overTitle.textContent = w === 'draw' ? 'DRAW!' : w === myId ? 'YOU WIN!' : 'YOU LOSE!';
       overTitle.style.color = w === 'draw' ? '#facc15' : w === myId ? '#4ade80' : '#f87171';
       const fs = msg.finalState;
-      const p1p = Math.round(fs.players.p1.cells / 384 * 100);
-      const p2p = Math.round(fs.players.p2.cells / 384 * 100);
+      const p1p = Math.round(fs.players.p1.cells / TOTAL_CELLS * 100);
+      const p2p = Math.round(fs.players.p2.cells / TOTAL_CELLS * 100);
       overTerrP1El.style.width      = p1p + '%';
       overTerrNeutralEl.style.width = Math.max(0, 100 - p1p - p2p) + '%';
       overTerrP2El.style.width      = p2p + '%';
@@ -501,7 +544,16 @@ ws.on((msg: ServerMessage) => {
       break;
     }
     case 'ERROR':
-      lobbyError.textContent = msg.message;
+      if (inGame) {
+        // A failed rejoin (grace expired / match already over) lands here.
+        inGame = false;
+        selfDown = false;
+        oppDown = false;
+        netBannerEl.textContent = `⚠ ${msg.message}`;
+        netBannerEl.style.display = '';
+      } else {
+        lobbyError.textContent = msg.message;
+      }
       break;
   }
 });
@@ -548,10 +600,18 @@ ws.onStatus((status: ConnStatus) => {
   } else if (status === 'open') {
     connStatus.textContent = '● 已連線';
     wsOpen = true;
+    // If the socket dropped mid-match, ask the server to rebind our slot. The
+    // REJOIN is sent before any queued input because setStatus runs first.
+    if (inGame && myId && myRoomCode) {
+      ws.send({ type: 'REJOIN_ROOM', code: myRoomCode, playerId: myId });
+    }
+    selfDown = false;
   } else {
     connStatus.textContent = '連線中斷，自動重新連線中…';
     wsOpen = false;
+    if (inGame) selfDown = true;
   }
+  updateNetBanner();
   refreshLobby();
 });
 

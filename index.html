@@ -259,6 +259,22 @@
       gap: 5px;
     }
 
+    /* In-game network banner (own reconnect / opponent dropped) */
+    #net-banner {
+      width: 720px;
+      max-width: 96vw;
+      box-sizing: border-box;
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      letter-spacing: 1px;
+      text-align: center;
+      font-weight: bold;
+      background: #422006;
+      color: #fbbf24;
+      border: 1px solid #a16207;
+    }
+
     /* HUD */
     #hud {
       display: grid;
@@ -590,6 +606,8 @@
 
   <!-- ── Game ── -->
   <div id="game-container" style="display:none">
+
+    <div id="net-banner" style="display:none"></div>
 
     <div id="hud">
       <div class="player-card p1">

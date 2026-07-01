@@ -27,6 +27,10 @@ export const STARTING_MONEY = 100;
 // How many towers each player brings into a match (chosen pre-game).
 export const LOADOUT_SIZE = 8;
 
+// If a player drops mid-match, keep their slot alive this long for a rejoin
+// before awarding the match to the opponent by forfeit.
+export const DISCONNECT_GRACE_MS = 20000;
+
 export interface TowerConfig {
   cost: number;
   maxHp: number;
