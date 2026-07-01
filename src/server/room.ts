@@ -3,7 +3,7 @@ import type { ClientMessage, ServerMessage, PlayerId, TowerType } from '../share
 import { createInitialState, stepGame, explodeSplash } from '../shared/gameLogic';
 import {
   BOARD_WIDTH, BOARD_HEIGHT, TICK_INTERVAL_MS, TOWER_CONFIGS, SELL_REFUND_RATIO,
-  LEVEL_MULTS, upgradeCostFor, MAX_TOWER_LEVEL, LOADOUT_SIZE, DISCONNECT_GRACE_MS,
+  LEVEL_MULTS, upgradeCostFor, MAX_TOWER_LEVEL, LOADOUT_SIZE, DISCONNECT_GRACE_MS, BOMB_COOLDOWN_TICKS,
 } from '../shared/config';
 import { decideBotAction, BOT_DECISION_TICKS } from './ai';
 
@@ -166,9 +166,11 @@ export class Room {
     const conn = this.players.find(p => p.id === pid);
     if (!conn || !conn.loadout.includes('bomb')) return;
     if (x < 0 || x >= BOARD_WIDTH || y < 0 || y >= BOARD_HEIGHT) return;
+    if (s.players[pid].bombCooldown > 0) return; // still on cooldown
     const cfg = TOWER_CONFIGS.bomb;
     if (s.players[pid].money < cfg.cost) return;
     s.players[pid].money -= cfg.cost;
+    s.players[pid].bombCooldown = BOMB_COOLDOWN_TICKS;
     explodeSplash(s, x, y, pid, cfg.towerDamage, cfg.splashRadius);
   }
 

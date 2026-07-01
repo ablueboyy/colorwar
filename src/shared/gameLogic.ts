@@ -26,8 +26,8 @@ export function createInitialState(): GameState {
     projectiles: [],
     barriers: [],
     players: {
-      p1: { id: 'p1', money: STARTING_MONEY, cells: BOARD_HEIGHT * INITIAL_P1_COLS },
-      p2: { id: 'p2', money: STARTING_MONEY, cells: BOARD_HEIGHT * INITIAL_P2_COLS },
+      p1: { id: 'p1', money: STARTING_MONEY, cells: BOARD_HEIGHT * INITIAL_P1_COLS, bombCooldown: 0 },
+      p2: { id: 'p2', money: STARTING_MONEY, cells: BOARD_HEIGHT * INITIAL_P2_COLS, bombCooldown: 0 },
     },
     tick: 0,
     timeLeft: GAME_DURATION,
@@ -500,6 +500,7 @@ export function stepGame(state: GameState): void {
     player.cells = cells;
     const cellBonus = Math.min(cells * CELL_INCOME_PER_SECOND, CELL_INCOME_CAP);
     player.money += (BASE_INCOME_PER_SECOND + cellBonus) * dt;
+    if (player.bombCooldown > 0) player.bombCooldown--;
   }
   // 金錢塔: extra income while active, scaling mildly with level.
   for (const t of state.towers) {

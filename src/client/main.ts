@@ -465,12 +465,24 @@ function updateHud(state: GameState): void {
   terrNeutralEl.style.width = Math.max(0, 100 - p1pct - p2pct) + '%';
   terrP2El.style.width      = p2pct + '%';
 
-  // Dim tower buttons if can't afford
+  // Dim tower buttons if can't afford; 炸彈 also greys out during its cooldown
+  // and shows the remaining seconds in place of its cost.
   if (myId) {
-    const money = state.players[myId].money;
+    const me = state.players[myId];
     document.querySelectorAll<HTMLButtonElement>('.tower-btn').forEach(btn => {
       const type = btn.dataset.type as TowerType;
-      btn.disabled = TOWER_CONFIGS[type].cost > money;
+      const cfg = TOWER_CONFIGS[type];
+      let disabled = cfg.cost > me.money;
+      if (cfg.active) {
+        const costEl = btn.querySelector('.tw-cost');
+        if (me.bombCooldown > 0) {
+          disabled = true;
+          if (costEl) costEl.textContent = `🕒 ${Math.ceil(me.bombCooldown / TICK_RATE)}s`;
+        } else if (costEl) {
+          costEl.textContent = `$${cfg.cost}`;
+        }
+      }
+      btn.disabled = disabled;
     });
   }
 }

@@ -44,6 +44,7 @@ export interface PlayerState {
   id: PlayerId;
   money: number;
   cells: number;
+  bombCooldown: number; // ticks until 炸彈 can be used again (0 = ready)
 }
 
 // A protective wall ring spawned by a 護牆塔 (wallgen). Shares one HP pool;

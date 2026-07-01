@@ -13,6 +13,9 @@ export const UPGRADE_COST_RATIO = 0.5;
 // 金錢塔: each level above 1 adds this fraction of its base income (L2 +25%,
 // L3 +50%) — a mild economic bump, not a runaway.
 export const MONEY_LEVEL_INCOME_BONUS = 0.25;
+
+// 炸彈: shared cooldown between drops, so it can't be spammed to grab territory.
+export const BOMB_COOLDOWN_TICKS = 10 * TICK_RATE; // 10 seconds
 export const LEVEL_MULTS: { range: number; speed: number; dmg: number; hp: number }[] = [
   { range: 1.0,  speed: 1.0,  dmg: 1.0,  hp: 1.0 },
   { range: 1.2,  speed: 1.35, dmg: 1.4,  hp: 1.5 },
@@ -214,13 +217,13 @@ export const TOWER_CONFIGS: Record<TowerType, TowerConfig> = {
   bomb: {
     cost: 70, maxHp: 0,
     shootInterval: 0, range: 0, bulletSpeed: 0,
-    towerDamage: 25, splashRadius: 1.5,
+    towerDamage: 50, splashRadius: 1.5,
     spreadCount: 0, spreadAngleDeg: 0,
     supportRange: 0, speedBoost: 0,
     healPerTick: 0, healRange: 0,
     active: true,
     label: '炸彈', glyph: '*', role: '主動空襲',
-    description: '主動技：選取後可點地圖上「任意」格子，花 $70 立即在該處 3×3 造成小額傷害與染色。不佔格、無實體。',
+    description: '主動技：選取後可點地圖上「任意」格子，花 $70 立即在該處 3×3 造成傷害與染色。有 10 秒冷卻，不能連續轟炸。不佔格、無實體。',
   },
   octopus: {
     cost: 110, maxHp: 60,
