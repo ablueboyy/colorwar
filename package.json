@@ -6,7 +6,8 @@
     "dev:server": "tsx watch src/server/index.ts",
     "dev:client": "vite",
     "build": "vite build",
-    "start": "tsx src/server/index.ts"
+    "start": "tsx src/server/index.ts",
+    "sim": "tsx src/server/sim.ts"
   },
   "dependencies": {
     "tsx": "^4.7.1",

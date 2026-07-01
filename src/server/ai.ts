@@ -61,25 +61,18 @@ export function decideBotAction(state: GameState, pid: PlayerId, loadout: TowerT
     }
   }
 
+  const pool = frontier.length ? frontier : backline;
+  if (pool.length === 0) return null;
+
+  // Prefer a role-appropriate tower, but fall back to *anything* placeable in
+  // the loadout so every tower sees play (matters for the balance sim, and
+  // keeps varied loadouts from stalling the bot).
   const r = Math.random();
-  let type: TowerType | null = null;
-  let spot: { x: number; y: number } | null = null;
-
-  if (r < 0.15 && backline.length) {
-    type = pick(BACKLINE);
-    spot = pickRandom(backline);
-  } else if (r < 0.4 && frontier.length) {
-    type = pick(ATTACKERS);
-    spot = pickRandom(frontier);
-  }
-
-  // Default (and fallback): a painter on the frontier to keep expanding.
-  if (!type) {
-    type = pick(PAINTERS);
-    const pool = frontier.length ? frontier : backline;
-    spot = pool.length ? pickRandom(pool) : null;
-  }
-
-  if (!type || !spot) return null;
-  return { kind: 'place', type, x: spot.x, y: spot.y };
+  const type =
+    (r < 0.15 ? pick(BACKLINE) : null) ??
+    (r < 0.45 ? pick(ATTACKERS) : null) ??
+    pick(PAINTERS) ??
+    pick(loadout.filter(t => !TOWER_CONFIGS[t].active));
+  if (!type) return null;
+  return { kind: 'place', type, x: pickRandom(pool).x, y: pickRandom(pool).y };
 }

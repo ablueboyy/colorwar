@@ -1,10 +1,8 @@
 import { WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage, PlayerId, TowerType } from '../shared/types';
-import { createInitialState, stepGame, explodeSplash, explodePercent, spawnEffect } from '../shared/gameLogic';
-import {
-  BOARD_WIDTH, BOARD_HEIGHT, TICK_INTERVAL_MS, TOWER_CONFIGS, SELL_REFUND_RATIO,
-  LEVEL_MULTS, upgradeCostFor, MAX_TOWER_LEVEL, LOADOUT_SIZE, DISCONNECT_GRACE_MS, BOMB_COOLDOWN_TICKS,
-} from '../shared/config';
+import { createInitialState, stepGame } from '../shared/gameLogic';
+import { TICK_INTERVAL_MS, TOWER_CONFIGS, LOADOUT_SIZE, DISCONNECT_GRACE_MS } from '../shared/config';
+import { placeTower, bomb, upgradeTower, sellTower, detonateSacrifice } from '../shared/actions';
 import { decideBotAction, BOT_DECISION_TICKS } from './ai';
 
 interface PlayerConn {
@@ -116,98 +114,11 @@ export class Room {
     const player = this.players.find(p => p.ws === ws && p.connected);
     if (!player || this.state.phase !== 'playing') return;
 
-    if (msg.type === 'PLACE_TOWER') this.placeTower(player.id, msg.towerType, msg.x, msg.y);
-    else if (msg.type === 'SELL_TOWER') this.sellTower(player.id, msg.towerId);
-    else if (msg.type === 'UPGRADE_TOWER') this.upgradeTower(player.id, msg.towerId);
-    else if (msg.type === 'BOMB') this.bomb(player.id, msg.x, msg.y);
-    else if (msg.type === 'DETONATE') this.detonateSacrifice(player.id, msg.towerId, msg.x, msg.y);
-  }
-
-  // Fire a charged 獻祭砲: consume the armed tower and blast the target cell,
-  // painting the radius and chipping enemy towers by a % of their max HP.
-  private detonateSacrifice(pid: PlayerId, towerId: string, x: number, y: number): void {
-    const s = this.state;
-    if (x < 0 || x >= BOARD_WIDTH || y < 0 || y >= BOARD_HEIGHT) return;
-    const idx = s.towers.findIndex(t => t.id === towerId && t.owner === pid && t.charged);
-    if (idx === -1) return;
-    const cfg = TOWER_CONFIGS.sacrifice;
-    s.towers.splice(idx, 1);
-    explodePercent(s, x, y, pid, cfg.sacrificeHpPercent ?? 0.5, cfg.splashRadius);
-    spawnEffect(s, 'nuke', x, y, cfg.splashRadius, 30, pid);
-  }
-
-  private placeTower(pid: PlayerId, type: TowerType, x: number, y: number): void {
-    const s = this.state;
-    const conn = this.players.find(p => p.id === pid);
-    if (!conn || !conn.loadout.includes(type)) return; // only towers in this player's loadout
-    const cfg = TOWER_CONFIGS[type];
-    if (cfg.active) return; // active abilities (炸彈) aren't placed as towers
-    if (x < 0 || x >= BOARD_WIDTH || y < 0 || y >= BOARD_HEIGHT) return;
-    if (s.board[y][x] !== pid) return;
-    if (s.towers.some(t => t.x === x && t.y === y)) return;
-    if (s.players[pid].money < cfg.cost) return;
-
-    s.players[pid].money -= cfg.cost;
-    // Timed helper towers (召喚塔/附魔塔) wait a full interval before their first
-    // trigger instead of firing instantly on placement.
-    const initialCooldown = cfg.summonInterval ?? cfg.enchantInterval ?? 0;
-    s.towers.push({
-      id: `${pid}_${x}_${y}_${s.tick}`,
-      owner: pid, type, x, y,
-      hp: cfg.maxHp, maxHp: cfg.maxHp,
-      cooldown: initialCooldown, active: true, level: 1,
-      aim: -Math.PI / 2, // start pointing up; offensive towers snap to target on first tick
-      slow: 0,
-    });
-
-    // 旗幟塔: one-time burst that paints a radius around the placement.
-    if (cfg.banner) {
-      const rad = cfg.bannerRadius ?? 2;
-      for (let dy = -rad; dy <= rad; dy++) {
-        for (let dx = -rad; dx <= rad; dx++) {
-          if (Math.hypot(dx, dy) > rad) continue;
-          const nx = x + dx, ny = y + dy;
-          if (nx < 0 || nx >= BOARD_WIDTH || ny < 0 || ny >= BOARD_HEIGHT) continue;
-          if (s.towers.some(t => t.x === nx && t.y === ny && t.owner !== pid)) continue; // enemy towers shield their cell
-          s.board[ny][nx] = pid;
-        }
-      }
-    }
-  }
-
-  private bomb(pid: PlayerId, x: number, y: number): void {
-    const s = this.state;
-    const conn = this.players.find(p => p.id === pid);
-    if (!conn || !conn.loadout.includes('bomb')) return;
-    if (x < 0 || x >= BOARD_WIDTH || y < 0 || y >= BOARD_HEIGHT) return;
-    if (s.players[pid].bombCooldown > 0) return; // still on cooldown
-    const cfg = TOWER_CONFIGS.bomb;
-    if (s.players[pid].money < cfg.cost) return;
-    s.players[pid].money -= cfg.cost;
-    s.players[pid].bombCooldown = BOMB_COOLDOWN_TICKS;
-    explodeSplash(s, x, y, pid, cfg.towerDamage, cfg.splashRadius);
-  }
-
-  private upgradeTower(pid: PlayerId, towerId: string): void {
-    const tower = this.state.towers.find(t => t.id === towerId && t.owner === pid);
-    if (!tower || tower.level >= MAX_TOWER_LEVEL) return;
-    if (TOWER_CONFIGS[tower.type].noUpgrade) return; // 附魔塔 can't be upgraded
-    const cfg = TOWER_CONFIGS[tower.type];
-    const cost = upgradeCostFor(cfg);
-    if (this.state.players[pid].money < cost) return;
-    this.state.players[pid].money -= cost;
-    tower.level++;
-    const m = LEVEL_MULTS[tower.level - 1];
-    tower.maxHp = Math.round(cfg.maxHp * m.hp);
-    tower.hp = tower.maxHp;
-  }
-
-  private sellTower(pid: PlayerId, towerId: string): void {
-    const idx = this.state.towers.findIndex(t => t.id === towerId && t.owner === pid);
-    if (idx === -1) return;
-    const tower = this.state.towers[idx];
-    this.state.players[pid].money += Math.floor(TOWER_CONFIGS[tower.type].cost * SELL_REFUND_RATIO);
-    this.state.towers.splice(idx, 1);
+    if (msg.type === 'PLACE_TOWER') placeTower(this.state, player.loadout, player.id, msg.towerType, msg.x, msg.y);
+    else if (msg.type === 'SELL_TOWER') sellTower(this.state, player.id, msg.towerId);
+    else if (msg.type === 'UPGRADE_TOWER') upgradeTower(this.state, player.id, msg.towerId);
+    else if (msg.type === 'BOMB') bomb(this.state, player.loadout, player.id, msg.x, msg.y);
+    else if (msg.type === 'DETONATE') detonateSacrifice(this.state, player.id, msg.towerId, msg.x, msg.y);
   }
 
   private startGame(): void {
@@ -244,8 +155,8 @@ export class Room {
     if (++this.botTick % BOT_DECISION_TICKS !== 0) return;
     const action = decideBotAction(this.state, this.bot.pid, this.bot.loadout);
     if (!action) return;
-    if (action.kind === 'place') this.placeTower(this.bot.pid, action.type, action.x, action.y);
-    else this.upgradeTower(this.bot.pid, action.towerId);
+    if (action.kind === 'place') placeTower(this.state, this.bot.loadout, this.bot.pid, action.type, action.x, action.y);
+    else upgradeTower(this.state, this.bot.pid, action.towerId);
   }
 
   // Award the match to `winner` because their opponent failed to reconnect.
