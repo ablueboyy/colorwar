@@ -220,6 +220,26 @@
     #map-name { color: #93c5fd; font-size: 0.75rem; }
     #map-desc { font-size: 0.66rem; color: #64748b; margin-top: 6px; text-align: center; letter-spacing: 1px; min-height: 0.9em; }
 
+    #mode { text-align: center; }
+    .mode-title { font-size: 0.9rem; color: #94a3b8; letter-spacing: 3px; margin: 6px 0 14px; }
+    .mode-choice { display: block; width: 300px; max-width: 90vw; margin: 10px auto; }
+    .setup-back { margin-bottom: 10px; }
+    .setup-act { text-align: center; margin-top: 8px; }
+    #color-picker { margin: 14px auto 2px; max-width: 720px; }
+    #color-grid { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    .color-btn {
+      width: 34px; height: 34px; border-radius: 8px; cursor: pointer;
+      border: 2px solid #1e3655; position: relative; padding: 0;
+    }
+    .color-btn.selected { border-color: #f8fafc; box-shadow: 0 0 0 2px #0ea5e9; }
+    .color-btn.taken { cursor: not-allowed; opacity: 0.28; }
+    .color-btn.taken::after {
+      content: '✕'; position: absolute; inset: 0; display: flex;
+      align-items: center; justify-content: center; color: #fff; font-size: 0.9rem;
+    }
+    #color-name { color: #93c5fd; font-size: 0.75rem; }
+    #color-hint { font-size: 0.66rem; color: #64748b; margin-top: 6px; text-align: center; min-height: 0.9em; }
+
     /* Tower sprite icons (replace old letter glyphs) render crisp + centered */
     img.lo-glyph, img.ld-glyph, img.tw-glyph, img.ti-glyph {
       image-rendering: pixelated;
@@ -621,8 +641,19 @@
     <div class="tagline">Territory · Towers · War</div>
   </div>
 
-  <!-- ── Lobby ── -->
-  <div id="lobby">
+  <!-- ── Mode select (step 1) ── -->
+  <div id="mode">
+    <div class="mode-title">選擇模式</div>
+    <button id="mode-solo" class="btn primary mode-choice">🤖 單人對戰電腦</button>
+    <button id="mode-create" class="btn primary mode-choice">🎮 建立雙人房</button>
+    <button id="mode-join" class="btn mode-choice">🔗 加入雙人房</button>
+    <div id="conn-status"></div>
+  </div>
+
+  <!-- ── Setup (step 2: loadout / map / colour / start) ── -->
+  <div id="lobby" style="display:none">
+    <button id="setup-back" class="btn setup-back">← 返回</button>
+    <div id="setup-title" class="mode-title"></div>
     <div id="loadout">
       <div class="loadout-head">
         <span>選擇出戰砲台</span>
@@ -637,30 +668,27 @@
       <div id="map-grid"><!-- filled by JS --></div>
       <div id="map-desc"></div>
     </div>
-    <div class="lobby-actions">
-      <div class="lobby-card">
-        <div class="lobby-card-title">New Game</div>
-        <button id="create-btn" class="btn primary">Create Room</button>
-        <div style="font-size:0.65rem;color:#1e3655;letter-spacing:2px">Get a code to share</div>
-      </div>
-      <div class="lobby-divider">OR</div>
-      <div class="lobby-card">
-        <div class="lobby-card-title">Join Game</div>
-        <input id="code-input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="0000" autocomplete="off" spellcheck="false" />
-        <button id="join-btn" class="btn">Join Room</button>
-      </div>
+    <div id="color-picker">
+      <div class="loadout-head"><span>選擇顏色</span><span id="color-name"></span></div>
+      <div id="color-grid"><!-- filled by JS --></div>
+      <div id="color-hint"></div>
     </div>
-    <div class="lobby-solo">
+    <div id="act-solo" class="setup-act">
       <div id="difficulty" role="group">
         <button class="diff-btn" data-diff="easy">簡單</button>
         <button class="diff-btn selected" data-diff="normal">普通</button>
         <button class="diff-btn" data-diff="hard">困難</button>
       </div>
-      <button id="solo-btn" class="btn primary">🤖 單人對戰電腦</button>
-      <div style="font-size:0.65rem;color:#1e3655;letter-spacing:2px;margin-top:5px">立即開打，不需對手</div>
+      <div><button id="solo-btn" class="btn primary">開始對戰</button></div>
+    </div>
+    <div id="act-create" class="setup-act">
+      <button id="create-btn" class="btn primary">建立房間（取得房號）</button>
+    </div>
+    <div id="act-join" class="setup-act">
+      <input id="code-input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="輸入房號 0000" autocomplete="off" spellcheck="false" />
+      <button id="join-btn" class="btn primary">加入房間</button>
     </div>
     <div id="lobby-error"></div>
-    <div id="conn-status"></div>
   </div>
 
   <!-- ── Waiting ── -->

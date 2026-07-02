@@ -64,7 +64,7 @@ wss.on('connection', (ws: LiveSocket) => {
       const created = new Room(code, () => rooms.delete(code), msg.mapId);
       rooms.set(code, created);
       room = created;
-      const pid = room.addPlayer(ws, msg.loadout);
+      const pid = room.addPlayer(ws, msg.loadout, msg.color);
       send(ws, { type: 'ROOM_CREATED', code, playerId: pid });
       send(ws, { type: 'WAITING_FOR_OPPONENT' });
     } else if (msg.type === 'CREATE_SOLO') {
@@ -75,16 +75,23 @@ wss.on('connection', (ws: LiveSocket) => {
       room = created;
       // Human takes p1; ROOM_CREATED (no WAITING) lets the client store the code
       // for reconnects, then the bot joins as p2 and the match starts at once.
-      const pid = room.addPlayer(ws, msg.loadout);
+      const pid = room.addPlayer(ws, msg.loadout, msg.color);
       send(ws, { type: 'ROOM_CREATED', code, playerId: pid });
       room.addBot(BOT_LOADOUT, msg.difficulty ?? 'normal');
+    } else if (msg.type === 'QUERY_ROOM') {
+      const target = rooms.get(msg.code.toUpperCase());
+      send(ws, {
+        type: 'ROOM_INFO', code: msg.code,
+        takenColors: target && target.joinable ? target.takenColors() : [],
+        joinable: !!target && target.joinable,
+      });
     } else if (msg.type === 'JOIN_ROOM') {
       if (room) return;
       const target = rooms.get(msg.code.toUpperCase());
       if (!target) { send(ws, { type: 'ERROR', message: 'Room not found' }); return; }
       if (target.isFull) { send(ws, { type: 'ERROR', message: 'Room is full' }); return; }
       room = target;
-      const pid = room.addPlayer(ws, msg.loadout);
+      const pid = room.addPlayer(ws, msg.loadout, msg.color);
       send(ws, { type: 'ROOM_JOINED', code: msg.code, playerId: pid });
     } else if (msg.type === 'REJOIN_ROOM') {
       if (room) return;

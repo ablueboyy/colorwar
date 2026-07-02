@@ -66,6 +66,7 @@ export interface PlayerState {
   money: number;
   cells: number;
   bombCooldown: number; // ticks until 炸彈 can be used again (0 = ready)
+  color: string;        // chosen palette colour id (see PLAYER_COLORS)
 }
 
 // A protective wall ring spawned by a 護牆塔 (wallgen). Shares one HP pool;
@@ -95,9 +96,10 @@ export interface GameState {
 }
 
 export type ClientMessage =
-  | { type: 'CREATE_ROOM'; loadout: TowerType[]; mapId?: string }
-  | { type: 'CREATE_SOLO'; loadout: TowerType[]; difficulty?: Difficulty; mapId?: string }
-  | { type: 'JOIN_ROOM'; code: string; loadout: TowerType[] }
+  | { type: 'CREATE_ROOM'; loadout: TowerType[]; mapId?: string; color?: string }
+  | { type: 'CREATE_SOLO'; loadout: TowerType[]; difficulty?: Difficulty; mapId?: string; color?: string }
+  | { type: 'JOIN_ROOM'; code: string; loadout: TowerType[]; color?: string }
+  | { type: 'QUERY_ROOM'; code: string } // ask which colours are taken before joining
   | { type: 'REJOIN_ROOM'; code: string; playerId: PlayerId }
   | { type: 'PLACE_TOWER'; towerType: TowerType; x: number; y: number }
   | { type: 'SELL_TOWER'; towerId: string }
@@ -109,6 +111,8 @@ export type ServerMessage =
   | { type: 'ROOM_CREATED'; code: string; playerId: PlayerId }
   | { type: 'ROOM_JOINED'; code: string; playerId: PlayerId }
   | { type: 'WAITING_FOR_OPPONENT' }
+  // Reply to QUERY_ROOM: colours already taken in that room (empty if room missing/full).
+  | { type: 'ROOM_INFO'; code: string; takenColors: string[]; joinable: boolean }
   | { type: 'GAME_START'; state: GameState; playerId: PlayerId }
   | { type: 'STATE'; state: GameState }
   // Opponent dropped mid-match; a grace timer is running for them to rejoin.

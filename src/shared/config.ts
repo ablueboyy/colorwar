@@ -328,6 +328,32 @@ export const MAPS: GameMap[] = [
 export const DEFAULT_MAP_ID = 'plains';
 export const RANDOM_MAP_ID = 'random'; // sentinel: pick a real map at match start
 
+// ── Player colours ──────────────────────────────────────────────────────────
+// Each player picks a colour id; both sides must differ. Every entry carries the
+// full shade set so the renderer/HUD can tint boards, towers, projectiles, etc.
+export interface PlayerColor {
+  id: string; name: string;
+  board: string; dark: string; mid: string; lite: string; accent: string;
+}
+export const PLAYER_COLORS: PlayerColor[] = [
+  { id: 'blue',   name: '藍', board: '#3b82f6', dark: '#1e3a8a', mid: '#2563eb', lite: '#93c5fd', accent: '#bfdbfe' },
+  { id: 'red',    name: '紅', board: '#ef4444', dark: '#7f1d1d', mid: '#dc2626', lite: '#fca5a5', accent: '#fecaca' },
+  { id: 'green',  name: '綠', board: '#22c55e', dark: '#14532d', mid: '#16a34a', lite: '#86efac', accent: '#bbf7d0' },
+  { id: 'orange', name: '橘', board: '#f97316', dark: '#7c2d12', mid: '#ea580c', lite: '#fdba74', accent: '#fed7aa' },
+  { id: 'purple', name: '紫', board: '#a855f7', dark: '#581c87', mid: '#9333ea', lite: '#d8b4fe', accent: '#e9d5ff' },
+  { id: 'teal',   name: '青', board: '#14b8a6', dark: '#134e4a', mid: '#0d9488', lite: '#5eead4', accent: '#99f6e4' },
+];
+export const DEFAULT_P1_COLOR = 'blue';
+export const DEFAULT_P2_COLOR = 'red';
+
+export function getPlayerColor(id: string | undefined): PlayerColor {
+  return PLAYER_COLORS.find(c => c.id === id) ?? PLAYER_COLORS[0];
+}
+// First palette colour not in `taken` (used to auto-pick the bot's / a bumped colour).
+export function firstFreeColor(taken: string[]): string {
+  return (PLAYER_COLORS.find(c => !taken.includes(c.id)) ?? PLAYER_COLORS[0]).id;
+}
+
 export function getMap(id: string | undefined): GameMap {
   return MAPS.find(m => m.id === id) ?? MAPS[0];
 }

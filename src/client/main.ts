@@ -1,14 +1,25 @@
 import type { GameState, PlayerId, Tower, TowerType, ServerMessage, Difficulty } from '../shared/types';
-import { TOWER_CONFIGS, LEVEL_MULTS, upgradeCostFor, MAX_TOWER_LEVEL, SELL_REFUND_RATIO, LOADOUT_SIZE, TICK_RATE, BOARD_WIDTH, BOARD_HEIGHT, SPEED_BOOST_CAP, MAPS, DEFAULT_MAP_ID, RANDOM_MAP_ID } from '../shared/config';
+import { TOWER_CONFIGS, LEVEL_MULTS, upgradeCostFor, MAX_TOWER_LEVEL, SELL_REFUND_RATIO, LOADOUT_SIZE, TICK_RATE, BOARD_WIDTH, BOARD_HEIGHT, SPEED_BOOST_CAP, MAPS, DEFAULT_MAP_ID, RANDOM_MAP_ID, PLAYER_COLORS, DEFAULT_P1_COLOR, getPlayerColor } from '../shared/config';
 import { WsClient, type ConnStatus } from './wsClient';
 import { Renderer, CELL_SIZE, CANVAS_W, CANVAS_H } from './renderer';
 import { play as playSfx, setMuted, isMuted, resumeAudio } from './sound';
 
 // ── DOM ─────────────────────────────────────────────────────────────────────
+const modeEl = document.getElementById('mode')!;
 const lobbyEl = document.getElementById('lobby')!;
 const waitEl = document.getElementById('waiting')!;
 const gameEl = document.getElementById('game-container')!;
 const gameOverEl = document.getElementById('game-over')!;
+
+const modeSoloBtn = document.getElementById('mode-solo') as HTMLButtonElement;
+const modeCreateBtn = document.getElementById('mode-create') as HTMLButtonElement;
+const modeJoinBtn = document.getElementById('mode-join') as HTMLButtonElement;
+const setupBackBtn = document.getElementById('setup-back') as HTMLButtonElement;
+const setupTitle = document.getElementById('setup-title')!;
+const actSolo = document.getElementById('act-solo')!;
+const actCreate = document.getElementById('act-create')!;
+const actJoin = document.getElementById('act-join')!;
+const mapPickerEl = document.getElementById('map-picker')!;
 
 const createBtn = document.getElementById('create-btn') as HTMLButtonElement;
 const soloBtn = document.getElementById('solo-btn') as HTMLButtonElement;
@@ -22,6 +33,9 @@ const loadoutDetail = document.getElementById('loadout-detail')!;
 const mapGrid = document.getElementById('map-grid')!;
 const mapName = document.getElementById('map-name')!;
 const mapDesc = document.getElementById('map-desc')!;
+const colorGrid = document.getElementById('color-grid')!;
+const colorName = document.getElementById('color-name')!;
+const colorHint = document.getElementById('color-hint')!;
 
 const roomCodeEl = document.getElementById('room-code-display')!;
 const waitStatus = document.getElementById('wait-status')!;
@@ -184,13 +198,20 @@ const myLoadout = new Set<TowerType>(DEFAULT_LOADOUT.slice(0, LOADOUT_SIZE));
 // Chosen map (host of a room / solo match picks it; joiners inherit the room's).
 let selectedMapId = DEFAULT_MAP_ID;
 
+// Two-step lobby: which setup variant we're in, chosen colour, and (for join)
+// the colours the room host already locked.
+let setupMode: 'solo' | 'create' | 'join' = 'solo';
+let selectedColor = DEFAULT_P1_COLOR;
+let takenColors: string[] = [];
+
 // Towers in config order, used for both the picker and the in-game panel.
 function loadoutOrdered(): [TowerType, (typeof TOWER_CONFIGS)[TowerType]][] {
   return TOWER_ENTRIES.filter(([t]) => myLoadout.has(t));
 }
 
 // ── Screens ──────────────────────────────────────────────────────────────────
-function showScreen(name: 'lobby' | 'waiting' | 'game' | 'gameover'): void {
+function showScreen(name: 'mode' | 'lobby' | 'waiting' | 'game' | 'gameover'): void {
+  modeEl.style.display = name === 'mode' ? '' : 'none';
   lobbyEl.style.display = name === 'lobby' ? '' : 'none';
   waitEl.style.display = name === 'waiting' ? '' : 'none';
   gameEl.style.display = name === 'game' ? '' : 'none';
@@ -267,6 +288,52 @@ function selectMap(id: string): void {
   mapGrid.querySelectorAll<HTMLButtonElement>('.map-btn').forEach(b => {
     b.classList.toggle('selected', b.dataset.map === id);
   });
+}
+
+// ── Colour picker (setup) ─────────────────────────────────────────────────────
+function buildColorPicker(): void {
+  colorGrid.innerHTML = '';
+  for (const c of PLAYER_COLORS) {
+    const btn = document.createElement('button');
+    btn.className = 'color-btn';
+    btn.dataset.color = c.id;
+    btn.style.background = c.board;
+    btn.title = c.name;
+    btn.addEventListener('click', () => {
+      if (takenColors.includes(c.id)) { playSfx('deny'); return; } // opponent already took it
+      playSfx('click'); selectColor(c.id);
+    });
+    colorGrid.appendChild(btn);
+  }
+  selectColor(selectedColor);
+}
+
+function selectColor(id: string): void {
+  // If the chosen colour is locked by the opponent, slide to the first free one.
+  if (takenColors.includes(id)) id = PLAYER_COLORS.find(c => !takenColors.includes(c.id))?.id ?? id;
+  selectedColor = id;
+  colorName.textContent = getPlayerColor(id).name;
+  colorGrid.querySelectorAll<HTMLButtonElement>('.color-btn').forEach(b => {
+    const cid = b.dataset.color!;
+    b.classList.toggle('selected', cid === id);
+    b.classList.toggle('taken', takenColors.includes(cid));
+  });
+  refreshLobby();
+}
+
+// Enter the setup screen for a chosen mode, showing only the relevant controls.
+function enterSetup(mode: 'solo' | 'create' | 'join'): void {
+  setupMode = mode;
+  takenColors = [];
+  colorHint.textContent = '';
+  setupTitle.textContent = mode === 'solo' ? '單人對戰電腦' : mode === 'create' ? '建立雙人房' : '加入雙人房';
+  actSolo.style.display = mode === 'solo' ? '' : 'none';
+  actCreate.style.display = mode === 'create' ? '' : 'none';
+  actJoin.style.display = mode === 'join' ? '' : 'none';
+  mapPickerEl.style.display = mode === 'join' ? 'none' : ''; // joiner inherits the host's map
+  lobbyError.textContent = '';
+  selectColor(selectedColor);
+  showScreen('lobby');
 }
 
 function toggleLoadout(type: TowerType): void {
@@ -347,10 +414,15 @@ function refreshLoadoutUI(): void {
 }
 
 function refreshLobby(): void {
-  const ready = wsOpen && myLoadout.size === LOADOUT_SIZE;
-  createBtn.disabled = !ready;
-  soloBtn.disabled = !ready;
-  joinBtn.disabled = !ready;
+  // Mode-select buttons just need an open socket.
+  modeSoloBtn.disabled = !wsOpen;
+  modeCreateBtn.disabled = !wsOpen;
+  modeJoinBtn.disabled = !wsOpen;
+  // Setup start buttons need a full loadout and an available colour.
+  const base = wsOpen && myLoadout.size === LOADOUT_SIZE && !takenColors.includes(selectedColor);
+  createBtn.disabled = !base;
+  soloBtn.disabled = !base;
+  joinBtn.disabled = !(base && codeInput.value.length === 4);
 }
 
 // ── Tower panel buttons ───────────────────────────────────────────────────────
@@ -449,11 +521,13 @@ function updateTowerActions(): void {
   }
 
   const rect = canvas.getBoundingClientRect();
-  const dispCell = rect.width / 24;
+  const dispCell = rect.width / BOARD_WIDTH;
   const cfg = TOWER_CONFIGS[tower.type];
   const m = LEVEL_MULTS[tower.level - 1];
   const effRange = Math.max(cfg.range, cfg.supportRange, cfg.healRange) * m.range;
-  const cx = (tower.x + 0.5) * dispCell;
+  // The DOM menu isn't affected by the canvas mirror, so flip x ourselves for p2.
+  const vx = myId === 'p2' ? BOARD_WIDTH - 1 - tower.x : tower.x;
+  const cx = (vx + 0.5) * dispCell;
   const cy = (tower.y + 0.5) * dispCell;
   // Sit on the range arc, but always at least one cell above the sprite so
   // zero-range towers (e.g. the wall) don't get covered by the menu.
@@ -523,10 +597,10 @@ function getCell(e: MouseEvent): { x: number; y: number } {
   const rect = canvas.getBoundingClientRect();
   const sx = canvas.width / rect.width;
   const sy = canvas.height / rect.height;
-  return {
-    x: Math.floor((e.clientX - rect.left) * sx / CELL_SIZE),
-    y: Math.floor((e.clientY - rect.top) * sy / CELL_SIZE),
-  };
+  const x = Math.floor((e.clientX - rect.left) * sx / CELL_SIZE);
+  const y = Math.floor((e.clientY - rect.top) * sy / CELL_SIZE);
+  // p2's view is mirrored (scaleX(-1)), so flip the click back to board space.
+  return { x: myId === 'p2' ? BOARD_WIDTH - 1 - x : x, y };
 }
 
 canvas.addEventListener('mousemove', (e) => {
@@ -650,6 +724,12 @@ function updateHud(state: GameState): void {
   terrNeutralEl.style.width = Math.max(0, 100 - p1pct - p2pct) + '%';
   terrP2El.style.width      = p2pct + '%';
 
+  // Recolour the HUD to each player's chosen colour.
+  const cP1 = getPlayerColor(state.players.p1.color).board;
+  const cP2 = getPlayerColor(state.players.p2.color).board;
+  terrP1El.style.background = cP1; terrP2El.style.background = cP2;
+  p1MoneyEl.style.color = cP1; p2MoneyEl.style.color = cP2;
+
   // Dim tower buttons if can't afford; 炸彈 also greys out during its cooldown
   // and shows the remaining seconds in place of its cost.
   if (myId) {
@@ -687,14 +767,26 @@ ws.on((msg: ServerMessage) => {
       myId = msg.playerId;
       myRoomCode = msg.code.toUpperCase();
       break;
-    case 'GAME_START':
+    case 'ROOM_INFO':
+      // Reply to our join-code query: grey out colours the host already took.
+      if (setupMode === 'join' && codeInput.value === msg.code) {
+        takenColors = msg.joinable ? msg.takenColors : [];
+        colorHint.textContent = !msg.joinable ? '找不到房間或房間已滿'
+          : takenColors.length ? '房主已選色，已幫你避開' : '';
+        selectColor(selectedColor); // re-grey + auto-switch if our pick got taken
+      }
+      break;
+    case 'GAME_START': {
       myId = msg.playerId;
       currentState = msg.state;
       selectedTowerId = null;
       panelTowerId = null;
       towerActionsEl.style.display = 'none';
-      myIdLabel.textContent = myId === 'p1' ? 'You: P1 (Blue)' : 'You: P2 (Red)';
-      myIdLabel.style.color = myId === 'p1' ? '#60a5fa' : '#f87171';
+      // Mirror the view for p2 so each player always sees themselves on the left.
+      canvas.style.transform = myId === 'p2' ? 'scaleX(-1)' : 'none';
+      const myCol = getPlayerColor(msg.state.players[myId].color);
+      myIdLabel.textContent = `You: ${myId === 'p1' ? 'P1' : 'P2'} (${myCol.name})`;
+      myIdLabel.style.color = myCol.board;
       buildTowerPanel();
       showScreen('game');
       seedStateSfx(currentState); // don't replay pre-existing objects on rejoin
@@ -704,6 +796,7 @@ ws.on((msg: ServerMessage) => {
       oppDown = false;
       updateNetBanner();
       break;
+    }
     case 'STATE':
       currentState = msg.state;
       processStateSfx(currentState);
@@ -739,6 +832,8 @@ ws.on((msg: ServerMessage) => {
       overTerrP1El.style.width      = p1p + '%';
       overTerrNeutralEl.style.width = Math.max(0, 100 - p1p - p2p) + '%';
       overTerrP2El.style.width      = p2p + '%';
+      overTerrP1El.style.background = getPlayerColor(fs.players.p1.color).board;
+      overTerrP2El.style.background = getPlayerColor(fs.players.p2.color).board;
       overP1LabelEl.textContent = `P1  ${p1p}%`;
       overP2LabelEl.textContent = `${p2p}%  P2`;
       overStats.textContent = `${fs.players.p1.cells} 格 vs ${fs.players.p2.cells} 格`;
@@ -766,10 +861,16 @@ function currentLoadout(): TowerType[] {
   return loadoutOrdered().map(([t]) => t);
 }
 
+// Mode-select (step 1) → setup (step 2), and back.
+modeSoloBtn.addEventListener('click', () => { playSfx('click'); enterSetup('solo'); });
+modeCreateBtn.addEventListener('click', () => { playSfx('click'); enterSetup('create'); });
+modeJoinBtn.addEventListener('click', () => { playSfx('click'); enterSetup('join'); });
+setupBackBtn.addEventListener('click', () => { playSfx('cancel'); showScreen('mode'); });
+
 createBtn.addEventListener('click', () => {
   playSfx('click');
   lobbyError.textContent = '';
-  ws.send({ type: 'CREATE_ROOM', loadout: currentLoadout(), mapId: selectedMapId });
+  ws.send({ type: 'CREATE_ROOM', loadout: currentLoadout(), mapId: selectedMapId, color: selectedColor });
 });
 
 let botDifficulty: Difficulty = 'normal';
@@ -784,20 +885,24 @@ document.querySelectorAll<HTMLButtonElement>('.diff-btn').forEach(btn => {
 soloBtn.addEventListener('click', () => {
   playSfx('click');
   lobbyError.textContent = '';
-  ws.send({ type: 'CREATE_SOLO', loadout: currentLoadout(), difficulty: botDifficulty, mapId: selectedMapId });
+  ws.send({ type: 'CREATE_SOLO', loadout: currentLoadout(), difficulty: botDifficulty, mapId: selectedMapId, color: selectedColor });
 });
 
 joinBtn.addEventListener('click', () => {
   const code = codeInput.value.trim();
-  if (!code) { playSfx('deny'); lobbyError.textContent = '請輸入房間代號'; return; }
+  if (code.length !== 4) { playSfx('deny'); lobbyError.textContent = '請輸入 4 碼房號'; return; }
   playSfx('click');
   lobbyError.textContent = '';
-  ws.send({ type: 'JOIN_ROOM', code, loadout: currentLoadout() });
+  ws.send({ type: 'JOIN_ROOM', code, loadout: currentLoadout(), color: selectedColor });
 });
 
-// Room codes are numeric now — keep the input to digits only.
+// Room codes are numeric — keep the input to digits only; on a full code, ask
+// the server which colours are already taken so we can grey them out.
 codeInput.addEventListener('input', () => {
   codeInput.value = codeInput.value.replace(/\D/g, '');
+  if (codeInput.value.length === 4) ws.send({ type: 'QUERY_ROOM', code: codeInput.value });
+  else { takenColors = []; colorHint.textContent = ''; selectColor(selectedColor); }
+  refreshLobby();
 });
 
 codeInput.addEventListener('keydown', (e) => {
@@ -864,9 +969,10 @@ window.addEventListener('pointerdown', resumeAudio, { once: true });
 window.addEventListener('keydown', resumeAudio, { once: true });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-showScreen('lobby');
+showScreen('mode');
 buildLoadoutPicker();
 buildMapPicker();
+buildColorPicker();
 refreshLobby();
 ws.connect();
 requestAnimationFrame(loop);

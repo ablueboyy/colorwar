@@ -4,6 +4,7 @@ import {
   BASE_INCOME_PER_SECOND, CELL_INCOME_PER_SECOND, CELL_INCOME_CAP,
   INITIAL_P1_COLS, INITIAL_P2_COLS, STARTING_MONEY, TOWER_CONFIGS, LEVEL_MULTS, MAX_TOWER_LEVEL,
   MONEY_LEVEL_INCOME_BONUS, SPEED_BOOST_CAP, buildTerrain,
+  DEFAULT_P1_COLOR, DEFAULT_P2_COLOR,
 } from './config';
 
 let nextId = 0;
@@ -29,8 +30,8 @@ export function createInitialState(mapId?: string): GameState {
     barriers: [],
     effects: [],
     players: {
-      p1: { id: 'p1', money: STARTING_MONEY, cells: BOARD_HEIGHT * INITIAL_P1_COLS, bombCooldown: 0 },
-      p2: { id: 'p2', money: STARTING_MONEY, cells: BOARD_HEIGHT * INITIAL_P2_COLS, bombCooldown: 0 },
+      p1: { id: 'p1', money: STARTING_MONEY, cells: BOARD_HEIGHT * INITIAL_P1_COLS, bombCooldown: 0, color: DEFAULT_P1_COLOR },
+      p2: { id: 'p2', money: STARTING_MONEY, cells: BOARD_HEIGHT * INITIAL_P2_COLS, bombCooldown: 0, color: DEFAULT_P2_COLOR },
     },
     tick: 0,
     timeLeft: GAME_DURATION,

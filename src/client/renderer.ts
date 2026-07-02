@@ -1,5 +1,5 @@
 import type { GameState, PlayerId, Tower, TowerType } from '../shared/types';
-import { BOARD_WIDTH, BOARD_HEIGHT, TOWER_CONFIGS, LEVEL_MULTS } from '../shared/config';
+import { BOARD_WIDTH, BOARD_HEIGHT, TOWER_CONFIGS, LEVEL_MULTS, getPlayerColor } from '../shared/config';
 
 export const CELL_SIZE = 24;
 export const CANVAS_W = BOARD_WIDTH * CELL_SIZE;
@@ -33,6 +33,11 @@ export class Renderer {
     canvas.height = CANVAS_H;
     this.ctx = canvas.getContext('2d')!;
     this.ctx.imageSmoothingEnabled = false;
+  }
+
+  // Palette shade set for a player, based on their chosen colour id.
+  private pcol(state: GameState, owner: PlayerId) {
+    return getPlayerColor(state.players[owner].color);
   }
 
   draw(
@@ -86,21 +91,21 @@ export class Renderer {
       const cx = (e.x + 0.5) * S, cy = (e.y + 0.5) * S;
       const R = e.radius * S;
       const life = e.maxTtl > 0 ? e.ttl / e.maxTtl : 0;
-      const p1 = e.owner === 'p1';
+      const col = this.pcol(state, e.owner);
 
       if (e.kind === 'jammer') {
         ctx.save();
         ctx.globalAlpha = 0.10 + 0.05 * Math.sin(now / 180);
-        ctx.fillStyle = p1 ? '#3b82f6' : '#ef4444';
+        ctx.fillStyle = col.board;
         ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = 0.45;
-        ctx.strokeStyle = p1 ? '#93c5fd' : '#fca5a5';
+        ctx.strokeStyle = col.lite;
         ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
         ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
         ctx.setLineDash([]);
         // orbiting interference particles
         const n = 7;
-        ctx.fillStyle = p1 ? '#bfdbfe' : '#fecaca';
+        ctx.fillStyle = col.accent;
         for (let i = 0; i < n; i++) {
           const a = now / 350 + (i * Math.PI * 2) / n;
           const rr = R * (0.35 + 0.6 * (((i * 7) % 5) / 5));
@@ -140,7 +145,7 @@ export class Renderer {
         ctx.save();
         const grow = 0.35 + 0.65 * (1 - life);
         ctx.globalAlpha = 0.5 * life;
-        ctx.fillStyle = p1 ? '#93c5fd' : '#fca5a5';
+        ctx.fillStyle = col.lite;
         ctx.beginPath(); ctx.arc(cx, cy, R * grow, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = Math.max(0, life);
         ctx.strokeStyle = '#fef3c7'; ctx.lineWidth = 2;
@@ -154,19 +159,20 @@ export class Renderer {
   // A projectile that vanishes between STATE updates has hit or expired; throw a
   // few short-lived sparks at its last spot so bullets feel like they land.
   private lastProj = new Map<string, { x: number; y: number; owner: PlayerId }>();
-  private sparks: { x: number; y: number; vx: number; vy: number; life: number; p1: boolean }[] = [];
+  private sparks: { x: number; y: number; vx: number; vy: number; life: number; color: string }[] = [];
 
   private updateSparks(state: GameState): void {
     const S = CELL_SIZE;
     const alive = new Set(state.projectiles.map(p => p.id));
     for (const [id, p] of this.lastProj) {
       if (alive.has(id)) continue;
+      const accent = this.pcol(state, p.owner).accent;
       for (let i = 0; i < 5; i++) {
         const a = Math.random() * Math.PI * 2, sp = 0.4 + Math.random() * 1.1;
         this.sparks.push({
           x: p.x * S, y: p.y * S,
           vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-          life: 1, p1: p.owner === 'p1',
+          life: 1, color: accent,
         });
       }
     }
@@ -182,7 +188,7 @@ export class Renderer {
       s.x += s.vx; s.y += s.vy; s.life -= 0.08;
       if (s.life <= 0) continue;
       ctx.globalAlpha = s.life;
-      ctx.fillStyle = s.p1 ? '#dbeafe' : '#fee2e2';
+      ctx.fillStyle = s.color;
       ctx.fillRect(s.x - 1, s.y - 1, 2, 2);
     }
     ctx.restore();
@@ -194,12 +200,12 @@ export class Renderer {
       // Aura towers (加速器/維修車/磁力塔) always show their reach; everything
       // else only reveals its range while selected.
       if (t.type === 'support' || t.type === 'repair' || t.type === 'magnet' || t.id === selectedTowerId) {
-        this.drawRangeCircle(t);
+        this.drawRangeCircle(state, t);
       }
     }
   }
 
-  private drawRangeCircle(tower: Tower): void {
+  private drawRangeCircle(state: GameState, tower: Tower): void {
     const ctx = this.ctx;
     const S = CELL_SIZE;
     const cfg = TOWER_CONFIGS[tower.type];
@@ -212,14 +218,14 @@ export class Renderer {
 
     const cx = (tower.x + 0.5) * S;
     const cy = (tower.y + 0.5) * S;
-    const p1 = tower.owner === 'p1';
+    const col = this.pcol(state, tower.owner);
 
     ctx.save();
     ctx.beginPath();
     ctx.arc(cx, cy, effRange * S, 0, Math.PI * 2);
-    ctx.fillStyle = p1 ? 'rgba(59,130,246,0.07)' : 'rgba(239,68,68,0.07)';
+    ctx.globalAlpha = 0.07; ctx.fillStyle = col.board;
     ctx.fill();
-    ctx.strokeStyle = p1 ? 'rgba(147,197,253,0.45)' : 'rgba(252,165,165,0.45)';
+    ctx.globalAlpha = 0.45; ctx.strokeStyle = col.lite;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
     ctx.stroke();
@@ -243,9 +249,7 @@ export class Renderer {
           continue;
         }
         const color = state.board[y][x];
-        ctx.fillStyle = color === 'neutral' ? COLORS.neutral
-          : color === 'p1' ? COLORS.p1
-          : COLORS.p2;
+        ctx.fillStyle = color === 'neutral' ? COLORS.neutral : this.pcol(state, color as PlayerId).board;
         ctx.fillRect(x * S, y * S, S, S);
 
         // Grid lines
@@ -298,9 +302,9 @@ export class Renderer {
     for (const b of state.barriers) {
       if (b.cells.length === 0) continue;
       const ratio = b.maxHp > 0 ? b.hp / b.maxHp : 0;
-      const p1 = b.owner === 'p1';
-      const base = p1 ? '#3b82f6' : '#ef4444';
-      const lite = p1 ? '#bfdbfe' : '#fecaca';
+      const col = this.pcol(state, b.owner);
+      const base = col.board;
+      const lite = col.accent;
       for (const c of b.cells) {
         const x = c.x * S, y = c.y * S;
         // Faint tint only, so the tile colour (and any tower built on it) stays
@@ -332,12 +336,12 @@ export class Renderer {
       const py = tower.y * S;
       const active = tower.active;
       const isOwn = tower.owner === myId;
-      const p1 = tower.owner === 'p1';
       const isSelected = tower.id === selectedTowerId;
 
-      const dark = !active ? '#2d3748' : p1 ? '#1e3a8a' : '#7f1d1d';
-      const mid  = !active ? '#4a5568' : p1 ? '#2563eb' : '#dc2626';
-      const lite = !active ? '#718096' : p1 ? '#93c5fd' : '#fca5a5';
+      const col = this.pcol(state, tower.owner);
+      const dark = !active ? '#2d3748' : col.dark;
+      const mid  = !active ? '#4a5568' : col.mid;
+      const lite = !active ? '#718096' : col.lite;
 
       // Aimed turrets rotate to face their target; radial (章魚砲) and
       // non-firing towers stay upright. UI overlays never rotate.
@@ -773,7 +777,7 @@ export class Renderer {
     for (const proj of state.projectiles) {
       const px = proj.x * S;
       const py = proj.y * S;
-      ctx.fillStyle = proj.owner === 'p1' ? COLORS.p1Proj : COLORS.p2Proj;
+      ctx.fillStyle = this.pcol(state, proj.owner).accent;
 
       if (proj.splashRadius > 0) {
         // Splash: bigger dot
@@ -793,7 +797,7 @@ export class Renderer {
 
     const w = state.winner;
     const text = w === 'draw' ? 'DRAW!' : w === 'p1' ? 'PLAYER 1 WINS!' : 'PLAYER 2 WINS!';
-    const color = w === 'p1' ? COLORS.p1Border : w === 'p2' ? COLORS.p2Border : '#facc15';
+    const color = w === 'p1' || w === 'p2' ? this.pcol(state, w).lite : '#facc15';
 
     ctx.fillStyle = color;
     ctx.font = 'bold 42px monospace';

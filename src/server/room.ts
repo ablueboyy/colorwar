@@ -1,7 +1,8 @@
 import { WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage, PlayerId, TowerType, Difficulty } from '../shared/types';
 import { createInitialState, stepGame } from '../shared/gameLogic';
-import { TICK_INTERVAL_MS, TOWER_CONFIGS, LOADOUT_SIZE, DISCONNECT_GRACE_MS } from '../shared/config';
+import { TICK_INTERVAL_MS, TOWER_CONFIGS, LOADOUT_SIZE, DISCONNECT_GRACE_MS,
+  PLAYER_COLORS, firstFreeColor, DEFAULT_P1_COLOR, DEFAULT_P2_COLOR } from '../shared/config';
 import { placeTower, bomb, upgradeTower, sellTower, detonateSacrifice } from '../shared/actions';
 import { decideBotAction, BOT_DIFFICULTY } from './ai';
 
@@ -10,7 +11,15 @@ interface PlayerConn {
   id: PlayerId;
   loadout: TowerType[];
   connected: boolean;
+  color: string; // chosen palette colour id (guaranteed unique within the room)
   isAi?: boolean; // slot driven by the built-in bot (single-player)
+}
+
+// Keep a valid, unused palette colour: honour the request if it's a real colour
+// that nobody in the room has taken, otherwise fall back to the first free one.
+function sanitizeColor(raw: string | undefined, taken: string[]): string {
+  if (raw && PLAYER_COLORS.some(c => c.id === raw) && !taken.includes(raw)) return raw;
+  return firstFreeColor(taken);
 }
 
 function sanitizeLoadout(raw: TowerType[] | undefined): TowerType[] {
@@ -44,10 +53,15 @@ export class Room {
 
   get isFull() { return this.players.length >= 2; }
   get isEmpty() { return this.players.length === 0; }
+  // Room can still be joined (has a free slot and hasn't started).
+  get joinable() { return !this.isFull && this.state.phase !== 'playing'; }
+  // Palette colours already claimed by players in this room.
+  takenColors(): string[] { return this.players.map(p => p.color); }
 
-  addPlayer(ws: WebSocket, loadout: TowerType[]): PlayerId {
+  addPlayer(ws: WebSocket, loadout: TowerType[], color?: string): PlayerId {
     const id: PlayerId = this.players.length === 0 ? 'p1' : 'p2';
-    this.players.push({ ws, id, loadout: sanitizeLoadout(loadout), connected: true });
+    const col = sanitizeColor(color, this.takenColors());
+    this.players.push({ ws, id, loadout: sanitizeLoadout(loadout), connected: true, color: col });
 
     if (this.players.length === 2) this.startGame();
 
@@ -58,7 +72,8 @@ export class Room {
   addBot(loadout: TowerType[], difficulty: Difficulty = 'normal'): void {
     const id: PlayerId = this.players.length === 0 ? 'p1' : 'p2';
     const sane = sanitizeLoadout(loadout);
-    this.players.push({ ws: null, id, loadout: sane, connected: true, isAi: true });
+    const col = sanitizeColor(undefined, this.takenColors()); // a colour the human didn't take
+    this.players.push({ ws: null, id, loadout: sane, connected: true, color: col, isAi: true });
     this.bot = { pid: id, loadout: sane, difficulty, decisionTicks: BOT_DIFFICULTY[difficulty].decisionTicks };
     if (this.players.length === 2) this.startGame();
   }
@@ -126,6 +141,8 @@ export class Room {
   private startGame(): void {
     this.state = createInitialState(this.mapId);
     this.state.phase = 'playing';
+    this.state.players.p1.color = this.players.find(p => p.id === 'p1')?.color ?? DEFAULT_P1_COLOR;
+    this.state.players.p2.color = this.players.find(p => p.id === 'p2')?.color ?? DEFAULT_P2_COLOR;
 
     for (const p of this.players) {
       this.send(p.ws, { type: 'GAME_START', state: this.state, playerId: p.id });
