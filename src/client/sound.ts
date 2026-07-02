@@ -4,7 +4,10 @@
 // Browsers block audio until a user gesture, so the context is created lazily on
 // the first play() and resumed on the first click/keydown (see main.ts).
 
-type SfxKind = 'place' | 'sell' | 'upgrade' | 'shoot' | 'explosion' | 'nuke' | 'win' | 'lose';
+type SfxKind =
+  | 'place' | 'sell' | 'upgrade' | 'shoot' | 'explosion' | 'nuke' | 'win' | 'lose'
+  | 'click' | 'select' | 'pick' | 'unpick' | 'deny' | 'arm' | 'charge' | 'cancel'
+  | 'bomb' | 'destroy' | 'shatter' | 'jammer' | 'start' | 'tick';
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
@@ -68,12 +71,30 @@ function noise(dur: number, vol: number, freq: number): void {
 export function play(kind: SfxKind): void {
   if (muted || !ensureCtx()) return;
   switch (kind) {
-    case 'shoot':     tone(520, 380, 0.05, 'square', 0.12); break;
+    // ── firing / combat ──
+    case 'shoot':     tone(520, 380, 0.05, 'square', 0.09); break;
+    case 'explosion': noise(0.28, 0.7, 900); tone(160, 50, 0.22, 'sawtooth', 0.4); break;
+    case 'nuke':      noise(0.6, 0.9, 700); tone(120, 30, 0.55, 'sawtooth', 0.6); break;
+    case 'bomb':      tone(900, 200, 0.22, 'sawtooth', 0.3); break; // launch whoosh (boom follows from the blast)
+    case 'destroy':   noise(0.22, 0.55, 620); tone(220, 60, 0.18, 'square', 0.3); break;
+    case 'shatter':   noise(0.16, 0.4, 2600); tone(1400, 500, 0.1, 'square', 0.15); break;
+    case 'jammer':    tone(240, 180, 0.18, 'square', 0.28); tone(180, 120, 0.18, 'sawtooth', 0.2, 0.05); break;
+    // ── building / economy ──
     case 'place':     tone(300, 620, 0.10, 'triangle', 0.5); break;
     case 'sell':      tone(500, 200, 0.12, 'sawtooth', 0.4); break;
     case 'upgrade':   tone(500, 900, 0.10, 'triangle', 0.5); tone(760, 1200, 0.10, 'triangle', 0.35, 0.09); break;
-    case 'explosion': noise(0.28, 0.7, 900); tone(160, 50, 0.22, 'sawtooth', 0.4); break;
-    case 'nuke':      noise(0.6, 0.9, 700); tone(120, 30, 0.55, 'sawtooth', 0.6); break;
+    case 'arm':       tone(260, 900, 0.30, 'sawtooth', 0.4); break; // charge-up sweep
+    case 'charge':    tone(600, 1200, 0.14, 'triangle', 0.45); tone(900, 1500, 0.16, 'triangle', 0.4, 0.12); break;
+    // ── UI ──
+    case 'click':     tone(660, 660, 0.03, 'square', 0.22); break;
+    case 'select':    tone(880, 1120, 0.05, 'triangle', 0.3); break;
+    case 'pick':      tone(700, 1050, 0.06, 'triangle', 0.4); break;
+    case 'unpick':    tone(700, 380, 0.06, 'triangle', 0.32); break;
+    case 'cancel':    tone(520, 240, 0.08, 'square', 0.3); break;
+    case 'deny':      tone(200, 150, 0.12, 'sawtooth', 0.35); break;
+    case 'tick':      tone(1000, 1000, 0.04, 'square', 0.3); break;
+    // ── match flow ──
+    case 'start':     [392, 523, 659].forEach((f, i) => tone(f, f, 0.14, 'triangle', 0.45, i * 0.11)); break;
     case 'win':       [523, 659, 784, 1046].forEach((f, i) => tone(f, f, 0.16, 'triangle', 0.5, i * 0.13)); break;
     case 'lose':      [440, 349, 262].forEach((f, i) => tone(f, f, 0.24, 'triangle', 0.45, i * 0.16)); break;
   }

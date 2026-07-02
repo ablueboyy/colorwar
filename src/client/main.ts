@@ -98,22 +98,79 @@ let oppDown = false;  // opponent dropped and we're waiting on their grace windo
 // A charged 獻祭砲 the player has picked up and is aiming; next map click fires it.
 let armedSacrificeId: string | null = null;
 
-// SFX: track which one-shot effects we've already sounded, so blasts/nukes each
-// play once as they appear (from either player). Throttle blasts so a splash
-// barrage doesn't machine-gun the speaker.
-const seenEffects = new Set<string>();
-let lastBoomAt = 0;
-function playEffectSfx(state: GameState): void {
+// SFX derived from the authoritative state each tick: we diff against the last
+// snapshot so combat events (shots, kills, wall breaks, jammer fields, a charged
+// 獻祭砲) each get a sound as they happen, for either player. Bursty events are
+// throttled so a splash barrage doesn't machine-gun the speaker.
+let seenEffects = new Set<string>();
+let prevTowerIds = new Set<string>();
+let prevCharged = new Set<string>();
+let prevProjIds = new Set<string>();
+let prevBarrierDown = new Set<string>();
+const soldIds = new Set<string>(); // towers we sold — don't also play a 'destroy' for them
+let lastBoomAt = 0, lastShootAt = 0, lastDestroyAt = 0;
+let lastTickSec = -1; // last whole-second we played a countdown tick for
+
+function processStateSfx(state: GameState): void {
   const now = performance.now();
-  const ids = new Set<string>();
+
+  // Effects: explosions / nukes / jammer fields.
+  const eff = new Set<string>();
   for (const e of state.effects) {
-    ids.add(e.id);
+    eff.add(e.id);
     if (seenEffects.has(e.id)) continue;
     if (e.kind === 'nuke') playSfx('nuke');
+    else if (e.kind === 'jammer') playSfx('jammer');
     else if (e.kind === 'blast' && now - lastBoomAt > 70) { playSfx('explosion'); lastBoomAt = now; }
   }
-  seenEffects.clear();
-  for (const id of ids) seenEffects.add(id);
+  seenEffects = eff;
+
+  // Towers: a newly-charged 獻祭砲, and any tower that vanished (destroyed — but
+  // not one we sold ourselves, which already played its own sound).
+  const towerIds = new Set<string>();
+  const charged = new Set<string>();
+  for (const t of state.towers) {
+    towerIds.add(t.id);
+    if (t.charged) { charged.add(t.id); if (!prevCharged.has(t.id)) playSfx('charge'); }
+  }
+  let destroyed = false;
+  for (const id of prevTowerIds) {
+    if (towerIds.has(id)) continue;
+    if (soldIds.has(id)) { soldIds.delete(id); continue; }
+    destroyed = true;
+  }
+  if (destroyed && now - lastDestroyAt > 80) { playSfx('destroy'); lastDestroyAt = now; }
+  prevTowerIds = towerIds;
+  prevCharged = charged;
+
+  // Projectiles: our own new shots (throttled — many towers fire at once).
+  let shot = false;
+  const projIds = new Set<string>();
+  for (const p of state.projectiles) {
+    projIds.add(p.id);
+    if (p.owner === myId && !prevProjIds.has(p.id)) shot = true;
+  }
+  if (shot && now - lastShootAt > 90) { playSfx('shoot'); lastShootAt = now; }
+  prevProjIds = projIds;
+
+  // Barriers: a wall ring that just dropped to zero HP.
+  const down = new Set<string>();
+  for (const b of state.barriers) {
+    if (b.hp > 0) continue;
+    down.add(b.id);
+    if (!prevBarrierDown.has(b.id)) playSfx('shatter');
+  }
+  prevBarrierDown = down;
+}
+
+// Seed the diff snapshots from a state without sounding anything (used on
+// GAME_START / rejoin so pre-existing objects don't all fire at once).
+function seedStateSfx(state: GameState): void {
+  seenEffects = new Set(state.effects.map(e => e.id));
+  prevTowerIds = new Set(state.towers.map(t => t.id));
+  prevCharged = new Set(state.towers.filter(t => t.charged).map(t => t.id));
+  prevProjIds = new Set(state.projectiles.map(p => p.id));
+  prevBarrierDown = new Set(state.barriers.filter(b => b.hp <= 0).map(b => b.id));
 }
 
 // Pre-game loadout: which towers this player brings into the match.
@@ -158,7 +215,13 @@ function buildLoadoutPicker(): void {
     btn.innerHTML = `${towerIcon(type, 'lo-glyph', 22)}<span class="lo-label">${cfg.label}</span><span class="lo-cost">$${cfg.cost}</span>`;
     // Tap shows the detail panel (touch-friendly) and toggles the pick; desktop
     // also previews on hover.
-    btn.addEventListener('click', () => { toggleLoadout(type); renderLoadoutDetail(type); });
+    btn.addEventListener('click', () => {
+      const before = myLoadout.has(type);
+      toggleLoadout(type);
+      const after = myLoadout.has(type);
+      playSfx(after && !before ? 'pick' : before && !after ? 'unpick' : 'click');
+      renderLoadoutDetail(type);
+    });
     btn.addEventListener('mouseenter', () => renderLoadoutDetail(type));
     loadoutGrid.appendChild(btn);
   }
@@ -255,7 +318,7 @@ function buildTowerPanel(): void {
     btn.className = 'tower-btn';
     btn.dataset.type = type;
     btn.innerHTML = `${towerIcon(type, 'tw-glyph', 24)}<span class="tw-label">${cfg.label}</span><span class="tw-cost">$${cfg.cost}</span>`;
-    btn.addEventListener('click', () => selectTower(type));
+    btn.addEventListener('click', () => { playSfx('click'); selectTower(type); });
     btn.addEventListener('mouseenter', () => renderTowerInfo(type));
     towerPanel.appendChild(btn);
   }
@@ -444,6 +507,7 @@ canvas.addEventListener('click', (e) => {
 
   // A charged 獻祭砲 is armed → this click detonates it at the target cell.
   if (armedSacrificeId) {
+    playSfx('bomb');
     ws.send({ type: 'DETONATE', towerId: armedSacrificeId, x, y });
     armedSacrificeId = null;
     return;
@@ -451,16 +515,19 @@ canvas.addEventListener('click', (e) => {
 
   // Clicking your own charged 獻祭砲 arms it (pick up the nuke, then aim).
   const charged = currentState.towers.find(t => t.x === x && t.y === y && t.owner === myId && t.charged);
-  if (charged) { armedSacrificeId = charged.id; deselectTower(); return; }
+  if (charged) { playSfx('arm'); armedSacrificeId = charged.id; deselectTower(); return; }
 
   // 炸彈 (active ability): click any cell to drop it.
   if (selectedTower && TOWER_CONFIGS[selectedTower].active) {
-    ws.send({ type: 'BOMB', x, y });
+    const me = currentState.players[myId];
+    if (me.bombCooldown > 0 || me.money < TOWER_CONFIGS[selectedTower].cost) playSfx('deny');
+    else { playSfx('bomb'); ws.send({ type: 'BOMB', x, y }); }
     return;
   }
 
   const hitTower = currentState.towers.find(t => t.x === x && t.y === y && t.owner === myId);
   if (hitTower) {
+    playSfx('select');
     selectedTowerId = hitTower.id;
     renderSelectedTowerInfo(hitTower);
     return;
@@ -469,14 +536,17 @@ canvas.addEventListener('click', (e) => {
   if (selectedTowerId !== null) deselectTower();
 
   if (selectedTower) {
-    // Optimistic click feedback: only chirp if the placement looks legal locally
-    // (server re-validates), so a misclick on enemy ground stays silent.
+    // Feedback only for a real placement intent (clicking your own empty cell):
+    // chirp if affordable, buzz if broke, stay silent on misclicks elsewhere.
     const state = currentState;
-    const placeable = state.board[y]?.[x] === myId
-      && !state.towers.some(t => t.x === x && t.y === y)
-      && state.players[myId].money >= TOWER_CONFIGS[selectedTower].cost;
-    if (placeable) playSfx('place');
-    ws.send({ type: 'PLACE_TOWER', towerType: selectedTower, x, y });
+    const onOwnEmpty = state.board[y]?.[x] === myId && !state.towers.some(t => t.x === x && t.y === y);
+    if (!onOwnEmpty) return;
+    if (state.players[myId].money >= TOWER_CONFIGS[selectedTower].cost) {
+      playSfx('place');
+      ws.send({ type: 'PLACE_TOWER', towerType: selectedTower, x, y });
+    } else {
+      playSfx('deny');
+    }
   }
 });
 
@@ -484,13 +554,14 @@ canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   if (!currentState || !myId) return;
   // Right-click cancels an armed 獻祭砲 instead of selling.
-  if (armedSacrificeId) { armedSacrificeId = null; return; }
+  if (armedSacrificeId) { playSfx('cancel'); armedSacrificeId = null; return; }
   const { x, y } = getCell(e);
   const tower = currentState.towers.find(t => t.x === x && t.y === y && t.owner === myId);
   if (tower) {
     if (tower.charged) return; // don't sell a charged nuke by accident
     if (selectedTowerId === tower.id) deselectTower();
     playSfx('sell');
+    soldIds.add(tower.id); // suppress the 'destroy' sound for our own sell
     ws.send({ type: 'SELL_TOWER', towerId: tower.id });
   }
 });
@@ -502,6 +573,7 @@ actUpgradeBtn.addEventListener('click', () => {
 actSellBtn.addEventListener('click', () => {
   if (!selectedTowerId) return;
   playSfx('sell');
+  soldIds.add(selectedTowerId); // suppress the 'destroy' sound for our own sell
   ws.send({ type: 'SELL_TOWER', towerId: selectedTowerId });
   deselectTower();
 });
@@ -514,6 +586,13 @@ function updateHud(state: GameState): void {
   timerEl.textContent = `${m}:${s}`;
   if (t < 30) timerEl.classList.add('warning');
   else timerEl.classList.remove('warning');
+
+  // Countdown ticks over the final 10 seconds.
+  if (t > 10) lastTickSec = -1;
+  else if (t > 0) {
+    const sec = Math.ceil(t);
+    if (sec !== lastTickSec) { playSfx('tick'); lastTickSec = sec; }
+  }
 
   const total = TOTAL_CELLS;
   p1MoneyEl.textContent = `$${Math.floor(state.players.p1.money)}`;
@@ -574,8 +653,8 @@ ws.on((msg: ServerMessage) => {
       myIdLabel.style.color = myId === 'p1' ? '#60a5fa' : '#f87171';
       buildTowerPanel();
       showScreen('game');
-      seenEffects.clear();
-      for (const e of currentState.effects) seenEffects.add(e.id); // don't replay pre-existing effects on rejoin
+      seedStateSfx(currentState); // don't replay pre-existing objects on rejoin
+      if (!inGame) playSfx('start'); // fresh match start (not a rejoin resync)
       // GAME_START also arrives as a resync after our own rejoin.
       inGame = true;
       oppDown = false;
@@ -583,7 +662,7 @@ ws.on((msg: ServerMessage) => {
       break;
     case 'STATE':
       currentState = msg.state;
-      playEffectSfx(currentState);
+      processStateSfx(currentState);
       if (selectedTowerId) {
         const sel = currentState.towers.find(t => t.id === selectedTowerId);
         if (sel) renderSelectedTowerInfo(sel);
@@ -644,6 +723,7 @@ function currentLoadout(): TowerType[] {
 }
 
 createBtn.addEventListener('click', () => {
+  playSfx('click');
   lobbyError.textContent = '';
   ws.send({ type: 'CREATE_ROOM', loadout: currentLoadout() });
 });
@@ -651,19 +731,22 @@ createBtn.addEventListener('click', () => {
 let botDifficulty: Difficulty = 'normal';
 document.querySelectorAll<HTMLButtonElement>('.diff-btn').forEach(btn => {
   btn.addEventListener('click', () => {
+    playSfx('click');
     botDifficulty = btn.dataset.diff as Difficulty;
     document.querySelectorAll('.diff-btn').forEach(b => b.classList.toggle('selected', b === btn));
   });
 });
 
 soloBtn.addEventListener('click', () => {
+  playSfx('click');
   lobbyError.textContent = '';
   ws.send({ type: 'CREATE_SOLO', loadout: currentLoadout(), difficulty: botDifficulty });
 });
 
 joinBtn.addEventListener('click', () => {
   const code = codeInput.value.trim();
-  if (!code) { lobbyError.textContent = '請輸入房間代號'; return; }
+  if (!code) { playSfx('deny'); lobbyError.textContent = '請輸入房間代號'; return; }
+  playSfx('click');
   lobbyError.textContent = '';
   ws.send({ type: 'JOIN_ROOM', code, loadout: currentLoadout() });
 });
@@ -677,7 +760,7 @@ codeInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') joinBtn.click();
 });
 
-playAgainBtn.addEventListener('click', () => location.reload());
+playAgainBtn.addEventListener('click', () => { playSfx('click'); location.reload(); });
 
 // ── Render loop ───────────────────────────────────────────────────────────────
 const SACRIFICE_BLAST = TOWER_CONFIGS.sacrifice.splashRadius;
@@ -726,7 +809,7 @@ muteBtn.addEventListener('click', () => {
   setMuted(!isMuted());
   muteBtn.textContent = isMuted() ? '🔇' : '🔊';
   muteBtn.classList.toggle('muted', isMuted());
-  if (!isMuted()) resumeAudio();
+  if (!isMuted()) { resumeAudio(); playSfx('click'); }
 });
 // Browsers block audio until a user gesture — unlock the context on the first one.
 window.addEventListener('pointerdown', resumeAudio, { once: true });
