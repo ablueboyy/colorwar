@@ -3,7 +3,7 @@ import {
   BOARD_WIDTH, BOARD_HEIGHT, TICK_RATE, GAME_DURATION, KO_THRESHOLD,
   BASE_INCOME_PER_SECOND, CELL_INCOME_PER_SECOND, CELL_INCOME_CAP,
   INITIAL_P1_COLS, INITIAL_P2_COLS, STARTING_MONEY, TOWER_CONFIGS, LEVEL_MULTS, MAX_TOWER_LEVEL,
-  MONEY_LEVEL_INCOME_BONUS,
+  MONEY_LEVEL_INCOME_BONUS, SPEED_BOOST_CAP,
 } from './config';
 
 let nextId = 0;
@@ -44,24 +44,30 @@ function lm(tower: Tower) {
 function findTarget(
   state: GameState,
   tower: Tower,
+  sniperClaims?: Set<string>,
 ): { x: number; y: number } | null {
   const cfg = TOWER_CONFIGS[tower.type];
   const range = cfg.range * lm(tower).range;
   const tx = tower.x, ty = tower.y;
 
-  // Sniper prefers enemy towers, and is taunted toward enemy decoys first.
+  // Sniper prefers enemy towers, is taunted toward enemy decoys first, and
+  // spreads fire: it aims at the nearest target NOT already claimed by another
+  // sniper this tick, so a wall of snipers distributes across the enemy line
+  // instead of all deleting the same freshly-placed tower.
   if (tower.type === 'sniper') {
     let best: Tower | null = null, bestDist = Infinity;
+    let free: Tower | null = null, freeDist = Infinity;
     let decoy: Tower | null = null, decoyDist = Infinity;
     for (const t of state.towers) {
       if (t.owner === tower.owner) continue;
       const d = Math.hypot(t.x - tx, t.y - ty);
       if (d > range) continue;
       if (d < bestDist) { bestDist = d; best = t; }
+      if (!sniperClaims?.has(t.id) && d < freeDist) { freeDist = d; free = t; }
       if (TOWER_CONFIGS[t.type].decoy && d < decoyDist) { decoyDist = d; decoy = t; }
     }
-    const pick = decoy ?? best;
-    if (pick) return { x: pick.x, y: pick.y };
+    const pick = decoy ?? free ?? best; // decoy taunt > an unclaimed target > nearest
+    if (pick) { sniperClaims?.add(pick.id); return { x: pick.x, y: pick.y }; }
   }
 
   // Jammer aims where its blast catches the most enemies that aren't already
@@ -209,12 +215,13 @@ export function explodePercent(
   }
 }
 
-// Push a short-lived cosmetic effect for the client to animate.
+// Push a short-lived cosmetic effect for the client to animate. 電磁塔 zaps pass
+// a far end (tx, ty) so the client can draw the bolt from tower to target.
 export function spawnEffect(
-  state: GameState, kind: 'jammer' | 'nuke' | 'blast', x: number, y: number,
-  radius: number, ttl: number, owner: PlayerId,
+  state: GameState, kind: 'jammer' | 'nuke' | 'blast' | 'zap', x: number, y: number,
+  radius: number, ttl: number, owner: PlayerId, tx?: number, ty?: number,
 ): void {
-  state.effects.push({ id: uid(), kind, x, y, radius, ttl, maxTtl: ttl, owner });
+  state.effects.push({ id: uid(), kind, x, y, radius, ttl, maxTtl: ttl, owner, tx, ty });
 }
 
 // 干擾砲: lobbed shell that, on landing, slows enemy towers in the blast area.
@@ -240,6 +247,49 @@ function makeTower(owner: PlayerId, type: Tower['type'], x: number, y: number, l
     hp: maxHp, maxHp,
     cooldown: 0, active: true, level, aim: -Math.PI / 2, slow: 0,
   };
+}
+
+// True if an enemy wall cell sits on the segment between two cell centres, so a
+// 電磁塔 can't zap through a 護牆 the way its (nonexistent) bullets would be blocked.
+function wallBlocksLine(x0: number, y0: number, x1: number, y1: number, walls: Set<string>): boolean {
+  const dx = x1 - x0, dy = y1 - y0;
+  const steps = Math.ceil(Math.hypot(dx, dy) * 3); // ~1/3-cell resolution
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    if (walls.has(`${Math.floor(x0 + dx * t)},${Math.floor(y0 + dy * t)}`)) return true;
+  }
+  return false;
+}
+
+// 電磁塔: instantly zap the nearest enemy towers within range (chain lightning),
+// no projectile. An enemy 護牆 between the coil and a target blocks that bolt.
+// Killed towers are added to `killed` for the caller to remove after the firing
+// loop, so we never splice state.towers mid-iteration.
+function fireTesla(state: GameState, tower: Tower, killed: Set<string>): void {
+  const cfg = TOWER_CONFIGS[tower.type];
+  const range = cfg.range * lm(tower).range;
+  const dmg = cfg.towerDamage * lm(tower).dmg;
+  const walls = new Set<string>();
+  for (const b of state.barriers) {
+    if (b.owner === tower.owner || b.hp <= 0) continue;
+    for (const c of b.cells) walls.add(`${c.x},${c.y}`);
+  }
+  const tcx = tower.x + 0.5, tcy = tower.y + 0.5;
+  const targets = state.towers
+    .filter(t => t.owner !== tower.owner && !killed.has(t.id) &&
+      Math.hypot(t.x - tower.x, t.y - tower.y) <= range &&
+      !(walls.size && wallBlocksLine(tcx, tcy, t.x + 0.5, t.y + 0.5, walls)))
+    .sort((a, b) =>
+      Math.hypot(a.x - tower.x, a.y - tower.y) - Math.hypot(b.x - tower.x, b.y - tower.y))
+    .slice(0, cfg.chainCount ?? 3);
+  for (const t of targets) {
+    t.hp -= dmg;
+    spawnEffect(state, 'zap', tower.x, tower.y, 0, 5, tower.owner, t.x, t.y); // ~0.25s bolt
+    if (t.hp <= 0) {
+      state.board[t.y][t.x] = tower.owner; // destroyed → capture its ground
+      killed.add(t.id);
+    }
+  }
 }
 
 // 章魚砲: one bullet in each of the 8 directions.
@@ -321,7 +371,7 @@ export function stepGame(state: GameState): void {
     for (const t of state.towers) {
       if (t.owner !== sup.owner || t.id === sup.id || !t.active) continue;
       if (Math.hypot(t.x - sup.x, t.y - sup.y) <= effRange) {
-        boosts.set(t.id, Math.min((boosts.get(t.id) ?? 1) + cfg.speedBoost, 2.5));
+        boosts.set(t.id, Math.min((boosts.get(t.id) ?? 1) + cfg.speedBoost, SPEED_BOOST_CAP));
       }
     }
   }
@@ -341,6 +391,8 @@ export function stepGame(state: GameState): void {
   }
 
   // 2. Tower activation + firing
+  const killedByTesla = new Set<string>(); // 電磁塔 kills, removed after the loop
+  const sniperClaims = new Set<string>();  // enemy towers already aimed at by a sniper this tick (spread fire)
   for (const tower of state.towers) {
     tower.active = state.board[tower.y]?.[tower.x] === tower.owner;
     if (tower.slow > 0) tower.slow--; // 干擾砲 slow ticks down regardless
@@ -360,14 +412,20 @@ export function stepGame(state: GameState): void {
       continue;
     }
 
+    // 電磁塔 zaps instantly (no projectile / aiming).
+    if (cfg.chainCount) {
+      if (tower.cooldown <= 0) { fireTesla(state, tower, killedByTesla); tower.cooldown = cfg.shootInterval; }
+      continue;
+    }
+
     // Direct-fire turrets track their target every tick so they keep facing
     // it between shots. Lob turrets (flak/jammer) pick a fresh target only
     // when they fire, otherwise the barrel would jitter every tick.
-    let target = cfg.lob ? null : findTarget(state, tower);
+    let target = cfg.lob ? null : findTarget(state, tower, sniperClaims);
     if (target) tower.aim = Math.atan2(target.y - tower.y, target.x - tower.x);
 
     if (tower.cooldown <= 0) {
-      if (cfg.lob) target = findTarget(state, tower);
+      if (cfg.lob) target = findTarget(state, tower, sniperClaims);
       if (target) {
         tower.aim = Math.atan2(target.y - tower.y, target.x - tower.x);
         fireProjectiles(state, tower, target);
@@ -377,6 +435,10 @@ export function stepGame(state: GameState): void {
       }
     }
   }
+
+  // Remove towers the 電磁塔 destroyed this tick (deferred to avoid mutating
+  // state.towers while the firing loop was iterating it).
+  if (killedByTesla.size) state.towers = state.towers.filter(t => !killedByTesla.has(t.id));
 
   // 2c. 召喚塔 spawns a basic tower on an adjacent empty own cell on a timer.
   for (const t of [...state.towers]) { // snapshot: we push new towers below
@@ -528,13 +590,14 @@ export function stepGame(state: GameState): void {
       continue;
     }
 
-    // 狙擊砲: its rounds fly over ground and walls, only ever interacting with
-    // enemy towers (handled above), so it can snipe deep into enemy lines.
+    // 狙擊砲: its rounds fly over ground (never dying on terrain), only ever
+    // interacting with enemy towers and walls, so it snipes exposed towers deep
+    // in enemy lines — but an enemy 護牆 still blocks and absorbs it.
     const pierce = TOWER_CONFIGS[proj.towerType].pierce;
 
     // Enemy wall ring blocks the shot and drains its shared HP pool; when the
     // pool empties the whole ring vanishes until the generator regenerates it.
-    const barrier = pierce ? undefined : state.barriers.find(b => b.owner !== proj.owner && b.cells.some(c => c.x === cx && c.y === cy));
+    const barrier = state.barriers.find(b => b.owner !== proj.owner && b.cells.some(c => c.x === cx && c.y === cy));
     if (barrier) {
       barrier.hp -= proj.towerDamage;
       if (barrier.hp <= 0) { barrier.hp = 0; barrier.cells = []; }
@@ -544,7 +607,7 @@ export function stepGame(state: GameState): void {
 
     // Check cell color
     const cell = state.board[cy][cx];
-    if (cell === proj.owner || pierce) continue; // pass through own cells (piercing rounds pass through everything)
+    if (cell === proj.owner || pierce) continue; // pass through own cells (sniper rounds fly over all ground)
 
     if (proj.splashRadius > 0) {
       explodeSplash(state, cx, cy, proj.owner, proj.towerDamage, proj.splashRadius);

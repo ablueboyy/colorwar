@@ -37,7 +37,7 @@ export type BotAction =
 const PAINTERS: TowerType[] = ['basic', 'rapid', 'spread', 'octopus'];
 // Paint-per-second order (best first), used by focus bots to prefer 散射砲 etc.
 const PAINTER_RANK: TowerType[] = ['spread', 'rapid', 'octopus', 'basic'];
-const ATTACKERS: TowerType[] = ['sniper', 'artillery', 'splash', 'flak'];
+const ATTACKERS: TowerType[] = ['sniper', 'artillery', 'splash', 'flak', 'tesla'];
 const HELPERS: TowerType[] = ['support', 'repair', 'money', 'enchant'];
 
 function pickRandom<T>(a: T[]): T {

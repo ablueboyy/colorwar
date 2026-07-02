@@ -5,7 +5,7 @@ export type TowerType =
   | 'artillery' | 'splash' | 'flak' | 'wallgen'
   | 'support' | 'repair'
   | 'money' | 'jammer' | 'sacrifice' | 'bomb' | 'octopus'
-  | 'summon' | 'magnet' | 'decoy' | 'banner' | 'enchant';
+  | 'summon' | 'magnet' | 'decoy' | 'tesla' | 'enchant';
 export type GamePhase = 'waiting' | 'playing' | 'ended';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
@@ -29,13 +29,16 @@ export interface Tower {
 // animates. Purely cosmetic but lives in shared state so both players see it.
 export interface Effect {
   id: string;
-  kind: 'jammer' | 'nuke' | 'blast';
+  kind: 'jammer' | 'nuke' | 'blast' | 'zap';
   x: number;
   y: number;
   radius: number;
   ttl: number;    // ticks remaining
   maxTtl: number; // ticks it started with (for fade)
   owner: PlayerId;
+  // 電磁塔 zap: the bolt's far end (the tower it struck).
+  tx?: number;
+  ty?: number;
 }
 
 export interface Projectile {

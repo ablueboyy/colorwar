@@ -108,7 +108,7 @@ let prevCharged = new Set<string>();
 let prevProjIds = new Set<string>();
 let prevBarrierDown = new Set<string>();
 const soldIds = new Set<string>(); // towers we sold — don't also play a 'destroy' for them
-let lastBoomAt = 0, lastShootAt = 0, lastDestroyAt = 0;
+let lastBoomAt = 0, lastShootAt = 0, lastDestroyAt = 0, lastZapAt = 0;
 let lastTickSec = -1; // last whole-second we played a countdown tick for
 
 function processStateSfx(state: GameState): void {
@@ -121,6 +121,7 @@ function processStateSfx(state: GameState): void {
     if (seenEffects.has(e.id)) continue;
     if (e.kind === 'nuke') playSfx('nuke');
     else if (e.kind === 'jammer') playSfx('jammer');
+    else if (e.kind === 'zap' && now - lastZapAt > 60) { playSfx('zap'); lastZapAt = now; }
     else if (e.kind === 'blast' && now - lastBoomAt > 70) { playSfx('explosion'); lastBoomAt = now; }
   }
   seenEffects = eff;
@@ -239,7 +240,7 @@ function toggleLoadout(type: TowerType): void {
 // the in-game tower info panel.
 function specialText(c: (typeof TOWER_CONFIGS)[TowerType]): string {
   if (c.active) return '主動技：點任意格投彈';
-  if (c.pierce) return '穿透地形與護牆，只打敵塔';
+  if (c.pierce) return '飛越地形只打敵塔（護牆可擋）';
   if (c.slowDuration) return `落點敵塔降速 ${Math.round((c.slowFactor ?? 0.2) * 100)}%／${c.slowDuration / TICK_RATE} 秒`;
   if (c.lob) return '越頂拋射、隨機砸落';
   if (c.sacrifice) return '吞噬 8 塔 → 蓄能，可拖曳投擲';
@@ -247,7 +248,7 @@ function specialText(c: (typeof TOWER_CONFIGS)[TowerType]): string {
   if (c.summonInterval) return `每 ${c.summonInterval / TICK_RATE} 秒召喚基礎砲`;
   if (c.magnetRange) return '吸附附近敵方子彈';
   if (c.decoy) return '嘲諷：吸引敵方狙擊';
-  if (c.banner) return '放置時爆發染色一圈';
+  if (c.chainCount) return `連鎖電擊最近 ${c.chainCount} 座敵塔`;
   if (c.enchantInterval) return `每 ${c.enchantInterval / TICK_RATE} 秒隨機升級友軍`;
   if (c.incomePerSec) return `運作時每秒 +$${c.incomePerSec}`;
   if (c.wallHp) return '5×5 護牆，破壞後 15 秒重建';

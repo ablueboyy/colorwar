@@ -116,6 +116,24 @@ export class Renderer {
         ctx.fillStyle = '#fbbf24';
         ctx.beginPath(); ctx.arc(cx, cy, R * grow, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
+      } else if (e.kind === 'zap') { // 電磁塔: jagged lightning bolt to its target
+        const tx = (e.tx! + 0.5) * S, ty = (e.ty! + 0.5) * S;
+        ctx.save();
+        const bolt = () => {
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          const segs = 5;
+          for (let i = 1; i < segs; i++) {
+            const t = i / segs;
+            ctx.lineTo(cx + (tx - cx) * t + (Math.random() - 0.5) * 7,
+                       cy + (ty - cy) * t + (Math.random() - 0.5) * 7);
+          }
+          ctx.lineTo(tx, ty); ctx.stroke();
+        };
+        ctx.globalAlpha = Math.max(0, life);
+        ctx.strokeStyle = '#a5f3fc'; ctx.lineWidth = 2.5; bolt();
+        ctx.strokeStyle = '#ecfeff'; ctx.lineWidth = 1; bolt(); // bright core
+        ctx.restore();
       } else { // blast: quick owner-coloured explosion (splash weapons / 炸彈)
         ctx.save();
         const grow = 0.35 + 0.65 * (1 - life);
@@ -613,15 +631,24 @@ export class Renderer {
         ctx.fillStyle = '#ef4444'; ctx.fill();
         break;
       }
-      case 'banner': {
-        // Flag on a pole
-        r(8, 4, 2, 22, GL);     // pole
+      case 'tesla': {
+        // Tesla coil: tapered coil body + glowing orb throwing sparks
+        r(9, 25, 12, 3, dark);   // base
+        ctx.fillStyle = mid;     // tapered coil body
         ctx.beginPath();
-        ctx.moveTo(10, 5); ctx.lineTo(24, 8); ctx.lineTo(10, 14);
-        ctx.closePath();
-        ctx.fillStyle = mid; ctx.fill();
-        ctx.strokeStyle = lite; ctx.lineWidth = 1; ctx.stroke();
-        r(7, 24, 4, 3, dark);   // base
+        ctx.moveTo(11, 24); ctx.lineTo(19, 24); ctx.lineTo(17, 14); ctx.lineTo(13, 14);
+        ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = lite; ctx.lineWidth = 1; // coil rings
+        for (let yy = 16; yy <= 23; yy += 2) { ctx.beginPath(); ctx.moveTo(12, yy); ctx.lineTo(18, yy); ctx.stroke(); }
+        ctx.beginPath(); ctx.arc(15, 11, 5, 0, Math.PI * 2); ctx.fillStyle = '#312e81'; ctx.fill();
+        ctx.beginPath(); ctx.arc(15, 11, 4, 0, Math.PI * 2); ctx.fillStyle = '#818cf8'; ctx.fill();
+        ctx.beginPath(); ctx.arc(15, 11, 2, 0, Math.PI * 2); ctx.fillStyle = '#e0e7ff'; ctx.fill();
+        ctx.strokeStyle = '#67e8f9'; ctx.lineWidth = 1; // electric sparks
+        ctx.beginPath();
+        ctx.moveTo(15, 6); ctx.lineTo(13, 4); ctx.lineTo(15, 3);
+        ctx.moveTo(20, 11); ctx.lineTo(23, 9); ctx.lineTo(22, 12);
+        ctx.moveTo(10, 11); ctx.lineTo(7, 9); ctx.lineTo(8, 12);
+        ctx.stroke();
         break;
       }
       case 'enchant': {

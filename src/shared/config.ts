@@ -24,6 +24,10 @@ export const LEVEL_MULTS: { range: number; speed: number; dmg: number; hp: numbe
   { range: 1.45, speed: 1.8,  dmg: 1.85, hp: 2.2 },
 ];
 
+// 加速器 fire-rate boost stacks additively but is capped here, so at +35% each
+// two accelerators reach the cap and a third adds nothing.
+export const SPEED_BOOST_CAP = 1.7;
+
 export const BASE_INCOME_PER_SECOND = 8;
 export const CELL_INCOME_PER_SECOND = 0.07;
 export const CELL_INCOME_CAP = 22;
@@ -70,8 +74,7 @@ export interface TowerConfig {
   summonInterval?: number; // 召喚塔: ticks between spawning a basic tower
   magnetRange?: number;    // 磁力塔: pulls enemy bullets within this range to itself
   decoy?: boolean;       // 誘餌塔: enemy snipers target it first
-  banner?: boolean;      // 旗幟塔: paint a burst on placement
-  bannerRadius?: number; // 旗幟塔: burst paint radius
+  chainCount?: number;   // 電磁塔: instantly zaps up to N nearest enemy towers
   enchantInterval?: number; // 附魔塔: ticks between upgrading a random nearby ally
   enchantRange?: number;    // 附魔塔: range for the random upgrade
   noUpgrade?: boolean;   // tower can't be manually/auto upgraded (附魔塔)
@@ -115,15 +118,15 @@ export const TOWER_CONFIGS: Record<TowerType, TowerConfig> = {
     description: '一次扇形噴三發，近距離快速鋪面，但血薄、射程短。',
   },
   sniper: {
-    cost: 120, maxHp: 40,
-    shootInterval: 80, range: 13, bulletSpeed: 0.9,
+    cost: 220, maxHp: 30,
+    shootInterval: 80, range: 6, bulletSpeed: 0.9,
     towerDamage: 45, splashRadius: 0,
     spreadCount: 1, spreadAngleDeg: 0,
     supportRange: 0, speedBoost: 0,
     healPerTick: 0, healRange: 0,
     pierce: true, fixedFireRate: true,
     label: '狙擊砲', glyph: 'N', role: '遠程拆塔',
-    description: '超長射程、單發高傷的點射手。子彈越過地形與護牆、只對敵塔造成傷害（不染色）。固定每 4 秒一發，射速不隨升級或加速器加快（升級只加傷害/射程/血量），怕肉盾與誘餌。',
+    description: '單發高傷的位置型精準拆塔手：造價高、射程中等，無法鋪成一整排。子彈飛越地形、只對敵塔造成傷害（不染色），但會被敵方護牆擋下。固定每 4 秒一發，射速不隨升級或加速器加快（升級只加傷害/射程/血量）。多把會分散鎖定不同目標，怕護牆、肉盾與誘餌。',
   },
   artillery: {
     cost: 150, maxHp: 60,
@@ -172,10 +175,10 @@ export const TOWER_CONFIGS: Record<TowerType, TowerConfig> = {
     shootInterval: 0, range: 0, bulletSpeed: 0,
     towerDamage: 0, splashRadius: 0,
     spreadCount: 0, spreadAngleDeg: 0,
-    supportRange: 2.5, speedBoost: 0.5,
+    supportRange: 2.5, speedBoost: 0.35,
     healPerTick: 0, healRange: 0,
     label: '加速器', glyph: 'U', role: '輔助加速',
-    description: '不發射。提升周圍友方砲台的射速，放在砲台群中央效果最好。',
+    description: '不發射。提升周圍友方砲台射速 +35%（最多兩台疊加、上限 ×1.7），放在砲台群中央效果最好。',
   },
   repair: {
     cost: 100, maxHp: 110,
@@ -276,16 +279,16 @@ export const TOWER_CONFIGS: Record<TowerType, TowerConfig> = {
     label: '誘餌塔', glyph: 'D', role: '嘲諷誘餌',
     description: '不發射。便宜又高血，敵方狙擊砲會優先打它，幫真正的砲台吸火。',
   },
-  banner: {
-    cost: 90, maxHp: 150,
-    shootInterval: 0, range: 0, bulletSpeed: 0,
-    towerDamage: 0, splashRadius: 0,
+  tesla: {
+    cost: 200, maxHp: 70,
+    shootInterval: 40, range: 4, bulletSpeed: 0,
+    towerDamage: 7, splashRadius: 0,
     spreadCount: 0, spreadAngleDeg: 0,
     supportRange: 0, speedBoost: 0,
     healPerTick: 0, healRange: 0,
-    banner: true, bannerRadius: 2,
-    label: '旗幟塔', glyph: 'P', role: '爆發搶地',
-    description: '放下的瞬間把周圍半徑 2 一次染成己色，之後變成幾乎無用的高血肉盾。適合搶中線或突進。',
+    chainCount: 3,
+    label: '電磁塔', glyph: 'T', role: '連鎖電擊',
+    description: '每 2 秒瞬間放電，同時電擊射程內最近的 3 座敵方砲台（不染色）。專打擠成一團的敵方陣型，但射程短、血薄，且電擊會被敵方護牆擋住視線（牆後的敵塔電不到），要放在前線並保護好。',
   },
   enchant: {
     cost: 170, maxHp: 90,

@@ -7,7 +7,7 @@
 type SfxKind =
   | 'place' | 'sell' | 'upgrade' | 'shoot' | 'explosion' | 'nuke' | 'win' | 'lose'
   | 'click' | 'select' | 'pick' | 'unpick' | 'deny' | 'arm' | 'charge' | 'cancel'
-  | 'bomb' | 'destroy' | 'shatter' | 'jammer' | 'start' | 'tick';
+  | 'bomb' | 'destroy' | 'shatter' | 'jammer' | 'zap' | 'start' | 'tick';
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
@@ -79,6 +79,7 @@ export function play(kind: SfxKind): void {
     case 'destroy':   noise(0.22, 0.55, 620); tone(220, 60, 0.18, 'square', 0.3); break;
     case 'shatter':   noise(0.16, 0.4, 2600); tone(1400, 500, 0.1, 'square', 0.15); break;
     case 'jammer':    tone(240, 180, 0.18, 'square', 0.28); tone(180, 120, 0.18, 'sawtooth', 0.2, 0.05); break;
+    case 'zap':       tone(1500, 380, 0.08, 'sawtooth', 0.22); noise(0.05, 0.2, 4000); break;
     // ── building / economy ──
     case 'place':     tone(300, 620, 0.10, 'triangle', 0.5); break;
     case 'sell':      tone(500, 200, 0.12, 'sawtooth', 0.4); break;

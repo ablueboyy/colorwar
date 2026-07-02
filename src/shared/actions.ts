@@ -32,20 +32,6 @@ export function placeTower(
     aim: -Math.PI / 2, // offensive towers snap to target on first tick
     slow: 0,
   });
-
-  // 旗幟塔: one-time burst that paints a radius around the placement.
-  if (cfg.banner) {
-    const rad = cfg.bannerRadius ?? 2;
-    for (let dy = -rad; dy <= rad; dy++) {
-      for (let dx = -rad; dx <= rad; dx++) {
-        if (Math.hypot(dx, dy) > rad) continue;
-        const nx = x + dx, ny = y + dy;
-        if (!inBounds(nx, ny)) continue;
-        if (s.towers.some(t => t.x === nx && t.y === ny && t.owner !== pid)) continue; // enemy towers shield their cell
-        s.board[ny][nx] = pid;
-      }
-    }
-  }
 }
 
 export function bomb(s: GameState, loadout: TowerType[], pid: PlayerId, x: number, y: number): void {
