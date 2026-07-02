@@ -168,7 +168,7 @@ export const TOWER_CONFIGS: Record<TowerType, TowerConfig> = {
     healPerTick: 0, healRange: 0,
     wallHp: 150, wallRegen: 300, wallSpan: 2,
     label: '護牆塔', glyph: 'W', role: '生成護牆',
-    description: '不發射。在周圍生成一圈 5×5 護牆攔截敵方子彈（自己的子彈可穿過）；護牆有共用血量、不會自動回血，被打爆消失後要等 15 秒才重建。高射砲可越頂無視它。',
+    description: '不發射。在周圍生成一圈 5×5 護牆攔截敵方子彈（自己的子彈可穿過），可延伸到中立或敵方領地。護牆只是護盾、不佔地也不算領地，你仍可在牆格上蓋塔。共用血量、不自動回血，被打爆消失後要等 15 秒才重建。高射砲可越頂無視它。',
   },
   support: {
     cost: 95, maxHp: 120,

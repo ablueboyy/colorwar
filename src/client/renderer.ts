@@ -41,7 +41,7 @@ export class Renderer {
     selectedTower: TowerType | null,
     hovered: { x: number; y: number } | null,
     selectedTowerId: string | null,
-    armedBlast: { x: number; y: number; radius: number } | null = null,
+    armedBlast: { x: number; y: number; radius: number; color?: string } | null = null,
   ): void {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
@@ -59,17 +59,19 @@ export class Renderer {
     if (state.phase === 'ended') this.drawEndOverlay(state);
   }
 
-  // Target preview for a charged 獻祭砲 the player is aiming.
-  private drawArmedBlast(a: { x: number; y: number; radius: number }): void {
+  // Target preview for an area ability the player is aiming (charged 獻祭砲 in
+  // gold, 炸彈 in orange).
+  private drawArmedBlast(a: { x: number; y: number; radius: number; color?: string }): void {
     const ctx = this.ctx, S = CELL_SIZE;
     const cx = (a.x + 0.5) * S, cy = (a.y + 0.5) * S;
+    const fill = a.color ?? '#fbbf24';
     ctx.save();
     const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 200);
     ctx.globalAlpha = 0.12 + 0.10 * pulse;
-    ctx.fillStyle = '#fbbf24';
+    ctx.fillStyle = fill;
     ctx.beginPath(); ctx.arc(cx, cy, a.radius * S, 0, Math.PI * 2); ctx.fill();
     ctx.globalAlpha = 0.9;
-    ctx.strokeStyle = '#facc15';
+    ctx.strokeStyle = fill;
     ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
     ctx.beginPath(); ctx.arc(cx, cy, a.radius * S, 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
@@ -263,18 +265,30 @@ export class Renderer {
   private drawBarriers(state: GameState): void {
     const ctx = this.ctx;
     const S = CELL_SIZE;
+    const m = 2.5, L = Math.max(4, S * 0.3); // bracket margin + arm length
     for (const b of state.barriers) {
       if (b.cells.length === 0) continue;
       const ratio = b.maxHp > 0 ? b.hp / b.maxHp : 0;
       const p1 = b.owner === 'p1';
-      ctx.globalAlpha = 0.35 + 0.45 * ratio; // fades as the shield is worn down
+      const base = p1 ? '#3b82f6' : '#ef4444';
+      const lite = p1 ? '#bfdbfe' : '#fecaca';
       for (const c of b.cells) {
         const x = c.x * S, y = c.y * S;
-        ctx.fillStyle = p1 ? '#3b82f6' : '#ef4444';
-        ctx.fillRect(x + 2, y + 2, S - 4, S - 4);
-        ctx.strokeStyle = p1 ? '#bfdbfe' : '#fecaca';
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(x + 2.5, y + 2.5, S - 5, S - 5);
+        // Faint tint only, so the tile colour (and any tower built on it) stays
+        // clearly visible — the cell reads as "shielded", not "occupied".
+        ctx.globalAlpha = 0.10 + 0.12 * ratio;
+        ctx.fillStyle = base;
+        ctx.fillRect(x + 1, y + 1, S - 2, S - 2);
+        // Corner brackets: a shield frame that leaves the centre open.
+        ctx.globalAlpha = 0.5 + 0.4 * ratio;
+        ctx.strokeStyle = lite;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x + m, y + m + L);       ctx.lineTo(x + m, y + m);         ctx.lineTo(x + m + L, y + m);
+        ctx.moveTo(x + S - m - L, y + m);   ctx.lineTo(x + S - m, y + m);     ctx.lineTo(x + S - m, y + m + L);
+        ctx.moveTo(x + S - m, y + S - m - L); ctx.lineTo(x + S - m, y + S - m); ctx.lineTo(x + S - m - L, y + S - m);
+        ctx.moveTo(x + m + L, y + S - m);   ctx.lineTo(x + m, y + S - m);     ctx.lineTo(x + m, y + S - m - L);
+        ctx.stroke();
       }
       ctx.globalAlpha = 1;
     }
@@ -571,6 +585,18 @@ export class Renderer {
         ctx.fillStyle = '#ef4444'; ctx.fill();
         ctx.beginPath(); ctx.arc(15, 17, 1.5, 0, Math.PI * 2);
         ctx.fillStyle = '#fecaca'; ctx.fill();
+        break;
+      }
+      case 'bomb': {
+        // Round bomb with a lit fuse (fixed colours — it's an item, not a turret)
+        ctx.beginPath(); ctx.arc(14, 18, 8, 0, Math.PI * 2); ctx.fillStyle = '#111827'; ctx.fill();
+        ctx.beginPath(); ctx.arc(14, 18, 6.5, 0, Math.PI * 2); ctx.fillStyle = '#374151'; ctx.fill();
+        ctx.beginPath(); ctx.arc(11.5, 15.5, 2, 0, Math.PI * 2); ctx.fillStyle = '#9ca3af'; ctx.fill(); // gloss
+        r(15, 7, 4, 5, '#4b5563'); // fuse cap
+        ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1.5; // fuse
+        ctx.beginPath(); ctx.moveTo(18, 8); ctx.quadraticCurveTo(24, 5, 22, 1); ctx.stroke();
+        ctx.beginPath(); ctx.arc(22, 1, 2.6, 0, Math.PI * 2); ctx.fillStyle = '#f59e0b'; ctx.fill(); // spark
+        ctx.beginPath(); ctx.arc(22, 1, 1.2, 0, Math.PI * 2); ctx.fillStyle = '#fde68a'; ctx.fill();
         break;
       }
       case 'octopus': {

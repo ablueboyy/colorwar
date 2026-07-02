@@ -335,7 +335,7 @@ function ringCells(gen: Tower, span: number, state: GameState): { x: number; y: 
       const x = gen.x + dx, y = gen.y + dy;
       if (x < 0 || x >= BOARD_WIDTH || y < 0 || y >= BOARD_HEIGHT) continue;
       if (state.towers.some(t => t.x === x && t.y === y)) continue;
-      cells.push({ x, y });
+      cells.push({ x, y }); // may extend onto neutral/enemy ground — that's fine
     }
   }
   return cells;

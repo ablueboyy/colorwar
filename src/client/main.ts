@@ -1,5 +1,5 @@
 import type { GameState, PlayerId, Tower, TowerType, ServerMessage, Difficulty } from '../shared/types';
-import { TOWER_CONFIGS, LEVEL_MULTS, upgradeCostFor, MAX_TOWER_LEVEL, SELL_REFUND_RATIO, LOADOUT_SIZE, TICK_RATE, BOARD_WIDTH, BOARD_HEIGHT } from '../shared/config';
+import { TOWER_CONFIGS, LEVEL_MULTS, upgradeCostFor, MAX_TOWER_LEVEL, SELL_REFUND_RATIO, LOADOUT_SIZE, TICK_RATE, BOARD_WIDTH, BOARD_HEIGHT, SPEED_BOOST_CAP } from '../shared/config';
 import { WsClient, type ConnStatus } from './wsClient';
 import { Renderer, CELL_SIZE, CANVAS_W, CANVAS_H } from './renderer';
 import { play as playSfx, setMuted, isMuted, resumeAudio } from './sound';
@@ -254,7 +254,10 @@ function specialText(c: (typeof TOWER_CONFIGS)[TowerType]): string {
   if (c.wallHp) return '5×5 護牆，破壞後 15 秒重建';
   if (c.spreadCount > 1) return `扇形 ${c.spreadCount} 連發`;
   if (c.splashRadius > 0) return '範圍爆炸染色';
-  if (c.speedBoost > 0) return `周圍友軍射速 +${Math.round(c.speedBoost * 100)}%`;
+  if (c.speedBoost > 0) {
+    const maxStacks = Math.max(1, Math.floor((SPEED_BOOST_CAP - 1) / c.speedBoost + 1e-9));
+    return `周圍友軍射速 +${Math.round(c.speedBoost * 100)}%（最多疊 ${maxStacks} 台，上限 ×${SPEED_BOOST_CAP}）`;
+  }
   if (c.healPerTick > 0) return '持續修復周圍友軍血量';
   return '單發單格染色';
 }
@@ -375,6 +378,7 @@ function renderSelectedTowerInfo(tower: Tower): void {
       範圍×${m.range.toFixed(1)} &nbsp;射速×${spd(m)} &nbsp;傷害×${m.dmg.toFixed(1)} &nbsp;血量×${m.hp.toFixed(1)}
       ${nextM ? `<span style="color:#334155"> → Lv.${tower.level + 1}: 範圍×${nextM.range.toFixed(1)} 射速×${spd(nextM)} 傷害×${nextM.dmg.toFixed(1)}</span>` : ''}
     </div>
+    <div class="ti-desc" style="color:#94a3b8">特性：${specialText(cfg)}</div>
     <div class="ti-stats">
       <div class="ti-stat"><span class="lab">HP</span><span class="bars" id="sel-hp">${Math.floor(tower.hp)} / ${tower.maxHp}</span></div>
       <div class="ti-stat"><span class="lab">等級</span><span class="bars">${'★'.repeat(tower.level)}${'<span class="empty">★</span>'.repeat(MAX_TOWER_LEVEL - tower.level)}</span></div>
@@ -771,9 +775,13 @@ function loop(): void {
     if (armedSacrificeId && !currentState.towers.some(t => t.id === armedSacrificeId && t.charged)) {
       armedSacrificeId = null;
     }
-    const armedBlast = armedSacrificeId && hovered
-      ? { x: hovered.x, y: hovered.y, radius: SACRIFICE_BLAST }
-      : null;
+    // Area-ability aiming reticle: gold for a charged 獻祭砲, orange for 炸彈.
+    let armedBlast: { x: number; y: number; radius: number; color?: string } | null = null;
+    if (armedSacrificeId && hovered) {
+      armedBlast = { x: hovered.x, y: hovered.y, radius: SACRIFICE_BLAST };
+    } else if (hovered && selectedTower && TOWER_CONFIGS[selectedTower].active) {
+      armedBlast = { x: hovered.x, y: hovered.y, radius: TOWER_CONFIGS[selectedTower].splashRadius, color: '#fb923c' };
+    }
     renderer.draw(currentState, myId, selectedTower, hovered, selectedTowerId, armedBlast);
     updateHud(currentState);
     updateTowerActions();
