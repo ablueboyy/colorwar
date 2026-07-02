@@ -2,6 +2,7 @@ import type { GameState, PlayerId, Tower, TowerType, ServerMessage, Difficulty }
 import { TOWER_CONFIGS, LEVEL_MULTS, upgradeCostFor, MAX_TOWER_LEVEL, SELL_REFUND_RATIO, LOADOUT_SIZE, TICK_RATE, BOARD_WIDTH, BOARD_HEIGHT } from '../shared/config';
 import { WsClient, type ConnStatus } from './wsClient';
 import { Renderer, CELL_SIZE, CANVAS_W, CANVAS_H } from './renderer';
+import { play as playSfx, setMuted, isMuted, resumeAudio } from './sound';
 
 // ── DOM ─────────────────────────────────────────────────────────────────────
 const lobbyEl = document.getElementById('lobby')!;
@@ -62,6 +63,7 @@ const actUpgradeBtn  = document.getElementById('act-upgrade')   as HTMLButtonEle
 const actSellBtn     = document.getElementById('act-sell')      as HTMLButtonElement;
 
 const netBannerEl    = document.getElementById('net-banner')    as HTMLElement;
+const muteBtn        = document.getElementById('mute-btn')       as HTMLButtonElement;
 
 const TOTAL_CELLS = BOARD_WIDTH * BOARD_HEIGHT;
 
@@ -95,6 +97,24 @@ let oppDown = false;  // opponent dropped and we're waiting on their grace windo
 
 // A charged 獻祭砲 the player has picked up and is aiming; next map click fires it.
 let armedSacrificeId: string | null = null;
+
+// SFX: track which one-shot effects we've already sounded, so blasts/nukes each
+// play once as they appear (from either player). Throttle blasts so a splash
+// barrage doesn't machine-gun the speaker.
+const seenEffects = new Set<string>();
+let lastBoomAt = 0;
+function playEffectSfx(state: GameState): void {
+  const now = performance.now();
+  const ids = new Set<string>();
+  for (const e of state.effects) {
+    ids.add(e.id);
+    if (seenEffects.has(e.id)) continue;
+    if (e.kind === 'nuke') playSfx('nuke');
+    else if (e.kind === 'blast' && now - lastBoomAt > 70) { playSfx('explosion'); lastBoomAt = now; }
+  }
+  seenEffects.clear();
+  for (const id of ids) seenEffects.add(id);
+}
 
 // Pre-game loadout: which towers this player brings into the match.
 const DEFAULT_LOADOUT: TowerType[] = ['basic', 'rapid', 'spread', 'sniper', 'artillery', 'splash', 'support', 'repair'];
@@ -156,6 +176,7 @@ function toggleLoadout(type: TowerType): void {
 // the in-game tower info panel.
 function specialText(c: (typeof TOWER_CONFIGS)[TowerType]): string {
   if (c.active) return '主動技：點任意格投彈';
+  if (c.pierce) return '穿透地形與護牆，只打敵塔';
   if (c.slowDuration) return `落點敵塔降速 ${Math.round((c.slowFactor ?? 0.2) * 100)}%／${c.slowDuration / TICK_RATE} 秒`;
   if (c.lob) return '越頂拋射、隨機砸落';
   if (c.sacrifice) return '吞噬 8 塔 → 蓄能，可拖曳投擲';
@@ -276,6 +297,8 @@ function renderSelectedTowerInfo(tower: Tower): void {
   const m = LEVEL_MULTS[tower.level - 1];
   const canUp = tower.level < MAX_TOWER_LEVEL;
   const nextM = canUp ? LEVEL_MULTS[tower.level] : null;
+  // 狙擊砲's fire rate is fixed, so show ×1.0 instead of the level's speed mult.
+  const spd = (mult: (typeof LEVEL_MULTS)[number]) => (cfg.fixedFireRate ? '1.0' : mult.speed.toFixed(1));
 
   towerInfo.innerHTML = `
     <div class="ti-header">
@@ -285,8 +308,8 @@ function renderSelectedTowerInfo(tower: Tower): void {
       <span class="ti-cost">${cfg.role}</span>
     </div>
     <div class="ti-desc">
-      範圍×${m.range.toFixed(1)} &nbsp;射速×${m.speed.toFixed(1)} &nbsp;傷害×${m.dmg.toFixed(1)} &nbsp;血量×${m.hp.toFixed(1)}
-      ${nextM ? `<span style="color:#334155"> → Lv.${tower.level + 1}: 範圍×${nextM.range.toFixed(1)} 射速×${nextM.speed.toFixed(1)} 傷害×${nextM.dmg.toFixed(1)}</span>` : ''}
+      範圍×${m.range.toFixed(1)} &nbsp;射速×${spd(m)} &nbsp;傷害×${m.dmg.toFixed(1)} &nbsp;血量×${m.hp.toFixed(1)}
+      ${nextM ? `<span style="color:#334155"> → Lv.${tower.level + 1}: 範圍×${nextM.range.toFixed(1)} 射速×${spd(nextM)} 傷害×${nextM.dmg.toFixed(1)}</span>` : ''}
     </div>
     <div class="ti-stats">
       <div class="ti-stat"><span class="lab">HP</span><span class="bars" id="sel-hp">${Math.floor(tower.hp)} / ${tower.maxHp}</span></div>
@@ -445,7 +468,16 @@ canvas.addEventListener('click', (e) => {
 
   if (selectedTowerId !== null) deselectTower();
 
-  if (selectedTower) ws.send({ type: 'PLACE_TOWER', towerType: selectedTower, x, y });
+  if (selectedTower) {
+    // Optimistic click feedback: only chirp if the placement looks legal locally
+    // (server re-validates), so a misclick on enemy ground stays silent.
+    const state = currentState;
+    const placeable = state.board[y]?.[x] === myId
+      && !state.towers.some(t => t.x === x && t.y === y)
+      && state.players[myId].money >= TOWER_CONFIGS[selectedTower].cost;
+    if (placeable) playSfx('place');
+    ws.send({ type: 'PLACE_TOWER', towerType: selectedTower, x, y });
+  }
 });
 
 canvas.addEventListener('contextmenu', (e) => {
@@ -458,16 +490,18 @@ canvas.addEventListener('contextmenu', (e) => {
   if (tower) {
     if (tower.charged) return; // don't sell a charged nuke by accident
     if (selectedTowerId === tower.id) deselectTower();
+    playSfx('sell');
     ws.send({ type: 'SELL_TOWER', towerId: tower.id });
   }
 });
 
 // ── Floating action buttons (created once → reliable clicks) ──
 actUpgradeBtn.addEventListener('click', () => {
-  if (selectedTowerId) ws.send({ type: 'UPGRADE_TOWER', towerId: selectedTowerId });
+  if (selectedTowerId) { playSfx('upgrade'); ws.send({ type: 'UPGRADE_TOWER', towerId: selectedTowerId }); }
 });
 actSellBtn.addEventListener('click', () => {
   if (!selectedTowerId) return;
+  playSfx('sell');
   ws.send({ type: 'SELL_TOWER', towerId: selectedTowerId });
   deselectTower();
 });
@@ -540,6 +574,8 @@ ws.on((msg: ServerMessage) => {
       myIdLabel.style.color = myId === 'p1' ? '#60a5fa' : '#f87171';
       buildTowerPanel();
       showScreen('game');
+      seenEffects.clear();
+      for (const e of currentState.effects) seenEffects.add(e.id); // don't replay pre-existing effects on rejoin
       // GAME_START also arrives as a resync after our own rejoin.
       inGame = true;
       oppDown = false;
@@ -547,6 +583,7 @@ ws.on((msg: ServerMessage) => {
       break;
     case 'STATE':
       currentState = msg.state;
+      playEffectSfx(currentState);
       if (selectedTowerId) {
         const sel = currentState.towers.find(t => t.id === selectedTowerId);
         if (sel) renderSelectedTowerInfo(sel);
@@ -582,6 +619,7 @@ ws.on((msg: ServerMessage) => {
       overP1LabelEl.textContent = `P1  ${p1p}%`;
       overP2LabelEl.textContent = `${p2p}%  P2`;
       overStats.textContent = `${fs.players.p1.cells} 格 vs ${fs.players.p2.cells} 格`;
+      playSfx(w === myId ? 'win' : 'lose');
       showScreen('gameover');
       break;
     }
@@ -682,6 +720,17 @@ ws.onStatus((status: ConnStatus) => {
   updateNetBanner();
   refreshLobby();
 });
+
+// ── Sound ─────────────────────────────────────────────────────────────────────
+muteBtn.addEventListener('click', () => {
+  setMuted(!isMuted());
+  muteBtn.textContent = isMuted() ? '🔇' : '🔊';
+  muteBtn.classList.toggle('muted', isMuted());
+  if (!isMuted()) resumeAudio();
+});
+// Browsers block audio until a user gesture — unlock the context on the first one.
+window.addEventListener('pointerdown', resumeAudio, { once: true });
+window.addEventListener('keydown', resumeAudio, { once: true });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 showScreen('lobby');

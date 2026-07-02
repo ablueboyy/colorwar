@@ -275,6 +275,7 @@
       flex-direction: column;
       align-items: center;
       gap: 5px;
+      position: relative;
     }
 
     /* In-game network banner (own reconnect / opponent dropped) */
@@ -292,6 +293,28 @@
       color: #fbbf24;
       border: 1px solid #a16207;
     }
+
+    #mute-btn {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      z-index: 5;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      font-size: 1rem;
+      line-height: 34px;
+      text-align: center;
+      cursor: pointer;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      background: #1e293b;
+      color: #e2e8f0;
+      opacity: 0.75;
+      transition: opacity 0.15s;
+    }
+    #mute-btn:hover { opacity: 1; }
+    #mute-btn.muted { opacity: 0.5; }
 
     /* HUD */
     #hud {
@@ -635,6 +658,8 @@
   <div id="game-container" style="display:none">
 
     <div id="net-banner" style="display:none"></div>
+
+    <button id="mute-btn" title="靜音／開啟音效" aria-label="mute">🔊</button>
 
     <div id="hud">
       <div class="player-card p1">

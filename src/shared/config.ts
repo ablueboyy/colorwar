@@ -55,6 +55,8 @@ export interface TowerConfig {
   healPerTick: number;
   healRange: number;
   lob?: boolean; // shells fly over territory and detonate at the target (高射砲/干擾砲)
+  pierce?: boolean; // 狙擊砲: bullet flies over ground & walls, only hits enemy towers
+  fixedFireRate?: boolean; // 狙擊砲: fire rate never speeds up (ignores level speed & 加速器); can still be slowed by 干擾砲
   wallHp?: number;    // 護牆塔: shared HP pool of the generated wall ring
   wallRegen?: number; // 護牆塔: ticks between full regenerations
   wallSpan?: number;  // 護牆塔: half-size of the square ring (2 → 5×5)
@@ -104,7 +106,7 @@ export const TOWER_CONFIGS: Record<TowerType, TowerConfig> = {
   },
   spread: {
     cost: 75, maxHp: 50,
-    shootInterval: 34, range: 4, bulletSpeed: 0.45,
+    shootInterval: 42, range: 4, bulletSpeed: 0.45,
     towerDamage: 8, splashRadius: 0,
     spreadCount: 3, spreadAngleDeg: 22,
     supportRange: 0, speedBoost: 0,
@@ -114,13 +116,14 @@ export const TOWER_CONFIGS: Record<TowerType, TowerConfig> = {
   },
   sniper: {
     cost: 120, maxHp: 40,
-    shootInterval: 65, range: 11, bulletSpeed: 0.9,
+    shootInterval: 80, range: 13, bulletSpeed: 0.9,
     towerDamage: 45, splashRadius: 0,
     spreadCount: 1, spreadAngleDeg: 0,
     supportRange: 0, speedBoost: 0,
     healPerTick: 0, healRange: 0,
+    pierce: true, fixedFireRate: true,
     label: '狙擊砲', glyph: 'N', role: '遠程拆塔',
-    description: '超長射程，優先狙擊敵方砲台，高傷害但染色弱。專拆對方陣型。',
+    description: '超長射程、單發高傷的點射手。子彈越過地形與護牆、只對敵塔造成傷害（不染色）。固定每 4 秒一發，射速不隨升級或加速器加快（升級只加傷害/射程/血量），怕肉盾與誘餌。',
   },
   artillery: {
     cost: 150, maxHp: 60,
@@ -133,7 +136,7 @@ export const TOWER_CONFIGS: Record<TowerType, TowerConfig> = {
     description: '全場最遠射程＋高拆塔傷害，隔空狙殺敵方砲台，但爆炸染色範圍很小、射速慢、血薄。',
   },
   splash: {
-    cost: 200, maxHp: 75,
+    cost: 210, maxHp: 75,
     shootInterval: 80, range: 6, bulletSpeed: 0.3,
     towerDamage: 10, splashRadius: 2.3,
     spreadCount: 1, spreadAngleDeg: 0,
@@ -143,7 +146,7 @@ export const TOWER_CONFIGS: Record<TowerType, TowerConfig> = {
     description: '命中點大範圍一次染色，適合近距離大面積翻盤，但又貴又脆、射程短、幾乎不能拆塔。',
   },
   flak: {
-    cost: 260, maxHp: 70,
+    cost: 240, maxHp: 70,
     shootInterval: 220, range: 16, bulletSpeed: 0.35,
     towerDamage: 22, splashRadius: 1.5,
     spreadCount: 1, spreadAngleDeg: 0,

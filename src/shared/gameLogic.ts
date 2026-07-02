@@ -349,7 +349,10 @@ export function stepGame(state: GameState): void {
 
     const boost = boosts.get(tower.id) ?? 1;
     const slowMul = tower.slow > 0 ? (1 - (TOWER_CONFIGS.jammer.slowFactor ?? 0.2)) : 1;
-    tower.cooldown -= boost * lm(tower).speed * slowMul;
+    // 狙擊砲 (fixedFireRate): cadence never speeds up — ignore level speed and
+    // 加速器 boost — but a 干擾砲 slow can still drag it down.
+    const speedMul = cfg.fixedFireRate ? 1 : boost * lm(tower).speed;
+    tower.cooldown -= speedMul * slowMul;
 
     // 章魚砲 fires radially, no aiming/targeting needed.
     if (cfg.octopus) {
@@ -525,9 +528,13 @@ export function stepGame(state: GameState): void {
       continue;
     }
 
+    // 狙擊砲: its rounds fly over ground and walls, only ever interacting with
+    // enemy towers (handled above), so it can snipe deep into enemy lines.
+    const pierce = TOWER_CONFIGS[proj.towerType].pierce;
+
     // Enemy wall ring blocks the shot and drains its shared HP pool; when the
     // pool empties the whole ring vanishes until the generator regenerates it.
-    const barrier = state.barriers.find(b => b.owner !== proj.owner && b.cells.some(c => c.x === cx && c.y === cy));
+    const barrier = pierce ? undefined : state.barriers.find(b => b.owner !== proj.owner && b.cells.some(c => c.x === cx && c.y === cy));
     if (barrier) {
       barrier.hp -= proj.towerDamage;
       if (barrier.hp <= 0) { barrier.hp = 0; barrier.cells = []; }
@@ -537,7 +544,7 @@ export function stepGame(state: GameState): void {
 
     // Check cell color
     const cell = state.board[cy][cx];
-    if (cell === proj.owner) continue; // pass through own cells
+    if (cell === proj.owner || pierce) continue; // pass through own cells (piercing rounds pass through everything)
 
     if (proj.splashRadius > 0) {
       explodeSplash(state, cx, cy, proj.owner, proj.towerDamage, proj.splashRadius);
