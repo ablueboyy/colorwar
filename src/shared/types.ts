@@ -1,5 +1,8 @@
 export type PlayerId = 'p1' | 'p2';
 export type CellColor = 'neutral' | PlayerId;
+// Static per-cell terrain (set at match start from the chosen map). 'rock' is an
+// impassable obstacle: can't be painted or built on, and blocks bullets.
+export type TerrainType = 'normal' | 'rock';
 export type TowerType =
   | 'basic' | 'rapid' | 'spread' | 'sniper'
   | 'artillery' | 'splash' | 'flak' | 'wallgen'
@@ -79,6 +82,7 @@ export interface Barrier {
 
 export interface GameState {
   board: CellColor[][];
+  terrain: TerrainType[][];
   towers: Tower[];
   projectiles: Projectile[];
   barriers: Barrier[];
@@ -91,8 +95,8 @@ export interface GameState {
 }
 
 export type ClientMessage =
-  | { type: 'CREATE_ROOM'; loadout: TowerType[] }
-  | { type: 'CREATE_SOLO'; loadout: TowerType[]; difficulty?: Difficulty }
+  | { type: 'CREATE_ROOM'; loadout: TowerType[]; mapId?: string }
+  | { type: 'CREATE_SOLO'; loadout: TowerType[]; difficulty?: Difficulty; mapId?: string }
   | { type: 'JOIN_ROOM'; code: string; loadout: TowerType[] }
   | { type: 'REJOIN_ROOM'; code: string; playerId: PlayerId }
   | { type: 'PLACE_TOWER'; towerType: TowerType; x: number; y: number }

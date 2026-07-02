@@ -22,6 +22,7 @@ function sanitizeLoadout(raw: TowerType[] | undefined): TowerType[] {
 
 export class Room {
   readonly code: string;
+  private readonly mapId: string | undefined;
   private players: PlayerConn[] = [];
   private state = createInitialState();
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -35,9 +36,10 @@ export class Room {
   private bot: { pid: PlayerId; loadout: TowerType[]; difficulty: Difficulty; decisionTicks: number } | null = null;
   private botTick = 0;
 
-  constructor(code: string, onDispose: () => void) {
+  constructor(code: string, onDispose: () => void, mapId?: string) {
     this.code = code;
     this.onDispose = onDispose;
+    this.mapId = mapId;
   }
 
   get isFull() { return this.players.length >= 2; }
@@ -122,7 +124,7 @@ export class Room {
   }
 
   private startGame(): void {
-    this.state = createInitialState();
+    this.state = createInitialState(this.mapId);
     this.state.phase = 'playing';
 
     for (const p of this.players) {

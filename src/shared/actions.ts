@@ -17,6 +17,7 @@ export function placeTower(
   const cfg = TOWER_CONFIGS[type];
   if (cfg.active) return; // active abilities (炸彈) aren't placed as towers
   if (!inBounds(x, y)) return;
+  if (s.terrain[y][x] === 'rock') return; // can't build on obstacles
   if (s.board[y][x] !== pid) return;
   if (s.towers.some(t => t.x === x && t.y === y)) return;
   if (s.players[pid].money < cfg.cost) return;

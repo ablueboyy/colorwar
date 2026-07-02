@@ -3,7 +3,7 @@ import {
   BOARD_WIDTH, BOARD_HEIGHT, TICK_RATE, GAME_DURATION, KO_THRESHOLD,
   BASE_INCOME_PER_SECOND, CELL_INCOME_PER_SECOND, CELL_INCOME_CAP,
   INITIAL_P1_COLS, INITIAL_P2_COLS, STARTING_MONEY, TOWER_CONFIGS, LEVEL_MULTS, MAX_TOWER_LEVEL,
-  MONEY_LEVEL_INCOME_BONUS, SPEED_BOOST_CAP,
+  MONEY_LEVEL_INCOME_BONUS, SPEED_BOOST_CAP, buildTerrain,
 } from './config';
 
 let nextId = 0;
@@ -11,17 +11,19 @@ function uid(): string {
   return (++nextId).toString(36);
 }
 
-export function createInitialState(): GameState {
+export function createInitialState(mapId?: string): GameState {
+  const terrain = buildTerrain(mapId);
   const board: CellColor[][] = Array.from(
     { length: BOARD_HEIGHT },
     () => Array(BOARD_WIDTH).fill('neutral') as CellColor[],
   );
   for (let y = 0; y < BOARD_HEIGHT; y++) {
-    for (let x = 0; x < INITIAL_P1_COLS; x++) board[y][x] = 'p1';
-    for (let x = BOARD_WIDTH - INITIAL_P2_COLS; x < BOARD_WIDTH; x++) board[y][x] = 'p2';
+    for (let x = 0; x < INITIAL_P1_COLS; x++) if (terrain[y][x] === 'normal') board[y][x] = 'p1';
+    for (let x = BOARD_WIDTH - INITIAL_P2_COLS; x < BOARD_WIDTH; x++) if (terrain[y][x] === 'normal') board[y][x] = 'p2';
   }
   return {
     board,
+    terrain,
     towers: [],
     projectiles: [],
     barriers: [],
@@ -98,6 +100,7 @@ function findTarget(
     const fy0 = Math.max(0, Math.floor(ty - range)), fy1 = Math.min(BOARD_HEIGHT - 1, Math.ceil(ty + range));
     for (let y = fy0; y <= fy1; y++) {
       for (let x = fx0; x <= fx1; x++) {
+        if (state.terrain[y][x] === 'rock') continue; // can't paint obstacles
         const cell = state.board[y][x];
         if (cell === tower.owner) continue;
         if (Math.hypot(x - tx, y - ty) > range) continue;
@@ -118,6 +121,7 @@ function findTarget(
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       if (state.board[y][x] === tower.owner) continue;
+      if (state.terrain[y][x] === 'rock') continue; // can't paint obstacles
       const d = Math.hypot(x - tx, y - ty);
       if (d <= range && d < bestDist) { bestDist = d; bestCell = { x, y }; }
     }
@@ -174,6 +178,7 @@ export function explodeSplash(
       if (Math.hypot(dx, dy) > splashRadius) continue;
       const nx = cx + dx, ny = cy + dy;
       if (nx < 0 || nx >= BOARD_WIDTH || ny < 0 || ny >= BOARD_HEIGHT) continue;
+      if (state.terrain[ny][nx] === 'rock') continue; // obstacles aren't painted or damaged
       const ei = state.towers.findIndex(t => t.x === nx && t.y === ny && t.owner !== owner);
       if (ei !== -1) {
         state.towers[ei].hp -= towerDamage * 0.6;
@@ -201,6 +206,7 @@ export function explodePercent(
       if (Math.hypot(dx, dy) > splashRadius) continue;
       const nx = cx + dx, ny = cy + dy;
       if (nx < 0 || nx >= BOARD_WIDTH || ny < 0 || ny >= BOARD_HEIGHT) continue;
+      if (state.terrain[ny][nx] === 'rock') continue; // obstacles aren't painted or damaged
       const ei = state.towers.findIndex(t => t.x === nx && t.y === ny && t.owner !== owner);
       if (ei !== -1) {
         state.towers[ei].hp -= state.towers[ei].maxHp * hpPercent;
@@ -249,14 +255,15 @@ function makeTower(owner: PlayerId, type: Tower['type'], x: number, y: number, l
   };
 }
 
-// True if an enemy wall cell sits on the segment between two cell centres, so a
-// 電磁塔 can't zap through a 護牆 the way its (nonexistent) bullets would be blocked.
-function wallBlocksLine(x0: number, y0: number, x1: number, y1: number, walls: Set<string>): boolean {
+// True if an enemy wall cell or a rock obstacle sits on the segment between two
+// cell centres, so a 電磁塔 can't zap through a 護牆 or through terrain.
+function sightBlocked(state: GameState, x0: number, y0: number, x1: number, y1: number, walls: Set<string>): boolean {
   const dx = x1 - x0, dy = y1 - y0;
   const steps = Math.ceil(Math.hypot(dx, dy) * 3); // ~1/3-cell resolution
   for (let i = 1; i < steps; i++) {
     const t = i / steps;
-    if (walls.has(`${Math.floor(x0 + dx * t)},${Math.floor(y0 + dy * t)}`)) return true;
+    const cx = Math.floor(x0 + dx * t), cy = Math.floor(y0 + dy * t);
+    if (walls.has(`${cx},${cy}`) || state.terrain[cy]?.[cx] === 'rock') return true;
   }
   return false;
 }
@@ -278,7 +285,7 @@ function fireTesla(state: GameState, tower: Tower, killed: Set<string>): void {
   const targets = state.towers
     .filter(t => t.owner !== tower.owner && !killed.has(t.id) &&
       Math.hypot(t.x - tower.x, t.y - tower.y) <= range &&
-      !(walls.size && wallBlocksLine(tcx, tcy, t.x + 0.5, t.y + 0.5, walls)))
+      !sightBlocked(state, tcx, tcy, t.x + 0.5, t.y + 0.5, walls))
     .sort((a, b) =>
       Math.hypot(a.x - tower.x, a.y - tower.y) - Math.hypot(b.x - tower.x, b.y - tower.y))
     .slice(0, cfg.chainCount ?? 3);
@@ -335,6 +342,7 @@ function ringCells(gen: Tower, span: number, state: GameState): { x: number; y: 
       const x = gen.x + dx, y = gen.y + dy;
       if (x < 0 || x >= BOARD_WIDTH || y < 0 || y >= BOARD_HEIGHT) continue;
       if (state.towers.some(t => t.x === x && t.y === y)) continue;
+      if (state.terrain[y][x] === 'rock') continue; // walls don't form on obstacles
       cells.push({ x, y }); // may extend onto neutral/enemy ground — that's fine
     }
   }
@@ -575,6 +583,14 @@ export function stepGame(state: GameState): void {
     const cx = Math.floor(proj.x);
     const cy = Math.floor(proj.y);
     if (cx < 0 || cx >= BOARD_WIDTH || cy < 0 || cy >= BOARD_HEIGHT) continue;
+
+    // Rock obstacles block all bullets (including piercing sniper rounds); a
+    // splash shell still detonates against the rock, painting the cells around it.
+    if (state.terrain[cy][cx] === 'rock') {
+      if (proj.splashRadius > 0) explodeSplash(state, cx, cy, proj.owner, proj.towerDamage, proj.splashRadius);
+      dead.add(proj.id);
+      continue;
+    }
 
     // Check enemy tower collision — a living enemy tower (including walls)
     // shields its cell; the cell is captured only by the shot that destroys it.

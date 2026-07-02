@@ -208,6 +208,18 @@
     .diff-btn:hover { color: #cbd5e1; }
     .diff-btn.selected { background: #1d4ed8; color: #fff; font-weight: bold; }
 
+    #map-picker { margin: 14px auto 2px; max-width: 720px; }
+    #map-grid { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+    .map-btn {
+      padding: 6px 14px; background: #0e1c30; color: #64748b;
+      border: 1px solid #1e3655; border-radius: 6px; cursor: pointer;
+      font-size: 0.8rem; font-family: inherit;
+    }
+    .map-btn:hover { color: #cbd5e1; }
+    .map-btn.selected { background: #1d4ed8; color: #fff; font-weight: bold; border-color: #3b82f6; }
+    #map-name { color: #93c5fd; font-size: 0.75rem; }
+    #map-desc { font-size: 0.66rem; color: #64748b; margin-top: 6px; text-align: center; letter-spacing: 1px; min-height: 0.9em; }
+
     /* Tower sprite icons (replace old letter glyphs) render crisp + centered */
     img.lo-glyph, img.ld-glyph, img.tw-glyph, img.ti-glyph {
       image-rendering: pixelated;
@@ -619,6 +631,11 @@
       <div id="loadout-grid"><!-- filled by JS --></div>
       <div id="loadout-detail"><!-- filled by JS --></div>
       <div class="loadout-hint">選滿 8 種才能開始；對局中只能使用帶上場的砲台</div>
+    </div>
+    <div id="map-picker">
+      <div class="loadout-head"><span>選擇地圖</span><span id="map-name"></span></div>
+      <div id="map-grid"><!-- filled by JS --></div>
+      <div id="map-desc"></div>
     </div>
     <div class="lobby-actions">
       <div class="lobby-card">

@@ -61,7 +61,7 @@ wss.on('connection', (ws: LiveSocket) => {
     if (msg.type === 'CREATE_ROOM') {
       if (room) return;
       const code = genCode();
-      const created = new Room(code, () => rooms.delete(code));
+      const created = new Room(code, () => rooms.delete(code), msg.mapId);
       rooms.set(code, created);
       room = created;
       const pid = room.addPlayer(ws, msg.loadout);
@@ -70,7 +70,7 @@ wss.on('connection', (ws: LiveSocket) => {
     } else if (msg.type === 'CREATE_SOLO') {
       if (room) return;
       const code = genCode();
-      const created = new Room(code, () => rooms.delete(code));
+      const created = new Room(code, () => rooms.delete(code), msg.mapId);
       rooms.set(code, created);
       room = created;
       // Human takes p1; ROOM_CREATED (no WAITING) lets the client store the code

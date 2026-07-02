@@ -1,4 +1,4 @@
-import type { TowerType } from './types';
+import type { TowerType, TerrainType } from './types';
 
 export const BOARD_WIDTH = 30;
 export const BOARD_HEIGHT = 20;
@@ -307,4 +307,47 @@ export const TOWER_CONFIGS: Record<TowerType, TowerConfig> = {
 // cost; those with an upgradeCostRatio override (召喚塔) pay a different rate.
 export function upgradeCostFor(cfg: TowerConfig): number {
   return Math.floor(cfg.cost * (cfg.upgradeCostRatio ?? UPGRADE_COST_RATIO));
+}
+
+// ── Maps ──────────────────────────────────────────────────────────────────
+// Each map is a set of rock rectangles [x, y, w, h]. Kept left-right symmetric
+// by construction so neither side (p1 left / p2 right) is favoured. The three
+// starting columns on each side are always kept clear.
+export interface GameMap { id: string; name: string; desc: string; rocks: [number, number, number, number][]; }
+
+export const MAPS: GameMap[] = [
+  { id: 'plains', name: '開闊平原', desc: '無障礙的空曠戰場，純比拚鋪面與火力。', rocks: [] },
+  { id: 'canyon', name: '中央峽谷', desc: '中線一道有缺口的岩壁，逼出上中下三條進攻路線。',
+    rocks: [[14, 0, 2, 4], [14, 7, 2, 6], [14, 16, 2, 4]] },
+  { id: 'bunkers', name: '四角碉堡', desc: '四角與中央的岩塊提供掩體，適合走位與遠程。',
+    rocks: [[8, 3, 3, 3], [19, 3, 3, 3], [8, 14, 3, 3], [19, 14, 3, 3], [13, 8, 4, 4]] },
+  { id: 'crossroads', name: '十字路障', desc: '橫豎交錯的岩帶把戰場切成區塊，更講究卡位。',
+    rocks: [[6, 9, 6, 2], [18, 9, 6, 2], [14, 3, 2, 4], [14, 13, 2, 4]] },
+];
+
+export const DEFAULT_MAP_ID = 'plains';
+export const RANDOM_MAP_ID = 'random'; // sentinel: pick a real map at match start
+
+export function getMap(id: string | undefined): GameMap {
+  return MAPS.find(m => m.id === id) ?? MAPS[0];
+}
+
+// Build the static terrain grid for a map id. 'random' resolves to a real map
+// here (once per match, since this is called at match start).
+export function buildTerrain(id: string | undefined): TerrainType[][] {
+  const resolved = id === RANDOM_MAP_ID ? MAPS[Math.floor(Math.random() * MAPS.length)].id : id;
+  const map = getMap(resolved);
+  const terrain: TerrainType[][] = Array.from(
+    { length: BOARD_HEIGHT }, () => Array(BOARD_WIDTH).fill('normal') as TerrainType[],
+  );
+  for (const [rx, ry, rw, rh] of map.rocks) {
+    for (let y = ry; y < ry + rh; y++) {
+      for (let x = rx; x < rx + rw; x++) {
+        if (x < 0 || x >= BOARD_WIDTH || y < 0 || y >= BOARD_HEIGHT) continue;
+        if (x < INITIAL_P1_COLS || x >= BOARD_WIDTH - INITIAL_P2_COLS) continue; // keep start columns clear
+        terrain[y][x] = 'rock';
+      }
+    }
+  }
+  return terrain;
 }

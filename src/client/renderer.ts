@@ -238,6 +238,10 @@ export class Renderer {
 
     for (let y = 0; y < BOARD_HEIGHT; y++) {
       for (let x = 0; x < BOARD_WIDTH; x++) {
+        if (state.terrain[y][x] === 'rock') {
+          this.drawRock(x * S, y * S, S);
+          continue;
+        }
         const color = state.board[y][x];
         ctx.fillStyle = color === 'neutral' ? COLORS.neutral
           : color === 'p1' ? COLORS.p1
@@ -255,11 +259,36 @@ export class Renderer {
     if (hovered && myId && selectedTower) {
       const { x, y } = hovered;
       const canPlace = TOWER_CONFIGS[selectedTower].active // 炸彈 lands anywhere
-        || (state.board[y]?.[x] === myId && !state.towers.some(t => t.x === x && t.y === y));
+        || (state.board[y]?.[x] === myId && state.terrain[y]?.[x] !== 'rock' && !state.towers.some(t => t.x === x && t.y === y));
       ctx.strokeStyle = canPlace ? '#facc15' : '#ef4444';
       ctx.lineWidth = 2;
       ctx.strokeRect(x * S + 1, y * S + 1, S - 2, S - 2);
     }
+  }
+
+  // A rock obstacle tile: dark base with a lighter faceted boulder on top.
+  private drawRock(x: number, y: number, S: number): void {
+    const ctx = this.ctx;
+    ctx.fillStyle = '#18181b';
+    ctx.fillRect(x, y, S, S);
+    ctx.fillStyle = '#3f3f46';
+    ctx.beginPath();
+    ctx.moveTo(x + S * 0.15, y + S * 0.8);
+    ctx.lineTo(x + S * 0.28, y + S * 0.28);
+    ctx.lineTo(x + S * 0.62, y + S * 0.16);
+    ctx.lineTo(x + S * 0.86, y + S * 0.5);
+    ctx.lineTo(x + S * 0.78, y + S * 0.85);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#52525b'; // top-left highlight facet
+    ctx.beginPath();
+    ctx.moveTo(x + S * 0.28, y + S * 0.28);
+    ctx.lineTo(x + S * 0.62, y + S * 0.16);
+    ctx.lineTo(x + S * 0.5, y + S * 0.46);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#71717a';
+    ctx.fillRect(x + S * 0.34, y + S * 0.3, S * 0.12, S * 0.1);
   }
 
   private drawBarriers(state: GameState): void {

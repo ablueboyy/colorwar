@@ -1,5 +1,5 @@
 import type { GameState, PlayerId, Tower, TowerType, ServerMessage, Difficulty } from '../shared/types';
-import { TOWER_CONFIGS, LEVEL_MULTS, upgradeCostFor, MAX_TOWER_LEVEL, SELL_REFUND_RATIO, LOADOUT_SIZE, TICK_RATE, BOARD_WIDTH, BOARD_HEIGHT, SPEED_BOOST_CAP } from '../shared/config';
+import { TOWER_CONFIGS, LEVEL_MULTS, upgradeCostFor, MAX_TOWER_LEVEL, SELL_REFUND_RATIO, LOADOUT_SIZE, TICK_RATE, BOARD_WIDTH, BOARD_HEIGHT, SPEED_BOOST_CAP, MAPS, DEFAULT_MAP_ID, RANDOM_MAP_ID } from '../shared/config';
 import { WsClient, type ConnStatus } from './wsClient';
 import { Renderer, CELL_SIZE, CANVAS_W, CANVAS_H } from './renderer';
 import { play as playSfx, setMuted, isMuted, resumeAudio } from './sound';
@@ -19,6 +19,9 @@ const connStatus = document.getElementById('conn-status')!;
 const loadoutGrid = document.getElementById('loadout-grid')!;
 const loadoutCount = document.getElementById('loadout-count')!;
 const loadoutDetail = document.getElementById('loadout-detail')!;
+const mapGrid = document.getElementById('map-grid')!;
+const mapName = document.getElementById('map-name')!;
+const mapDesc = document.getElementById('map-desc')!;
 
 const roomCodeEl = document.getElementById('room-code-display')!;
 const waitStatus = document.getElementById('wait-status')!;
@@ -178,6 +181,9 @@ function seedStateSfx(state: GameState): void {
 const DEFAULT_LOADOUT: TowerType[] = ['basic', 'rapid', 'spread', 'sniper', 'artillery', 'splash', 'support', 'repair'];
 const myLoadout = new Set<TowerType>(DEFAULT_LOADOUT.slice(0, LOADOUT_SIZE));
 
+// Chosen map (host of a room / solo match picks it; joiners inherit the room's).
+let selectedMapId = DEFAULT_MAP_ID;
+
 // Towers in config order, used for both the picker and the in-game panel.
 function loadoutOrdered(): [TowerType, (typeof TOWER_CONFIGS)[TowerType]][] {
   return TOWER_ENTRIES.filter(([t]) => myLoadout.has(t));
@@ -228,6 +234,39 @@ function buildLoadoutPicker(): void {
   }
   refreshLoadoutUI();
   renderLoadoutDetail(TOWER_ENTRIES[0][0]);
+}
+
+// ── Map picker (lobby) ────────────────────────────────────────────────────────
+function buildMapPicker(): void {
+  mapGrid.innerHTML = '';
+  const entries: { id: string; name: string }[] = [
+    ...MAPS.map(m => ({ id: m.id, name: m.name })),
+    { id: RANDOM_MAP_ID, name: '🎲 隨機' },
+  ];
+  for (const e of entries) {
+    const btn = document.createElement('button');
+    btn.className = 'map-btn';
+    btn.dataset.map = e.id;
+    btn.textContent = e.name;
+    btn.addEventListener('click', () => { playSfx('click'); selectMap(e.id); });
+    mapGrid.appendChild(btn);
+  }
+  selectMap(selectedMapId);
+}
+
+function selectMap(id: string): void {
+  selectedMapId = id;
+  if (id === RANDOM_MAP_ID) {
+    mapName.textContent = '🎲 隨機';
+    mapDesc.textContent = '每局開打時隨機抽一張地圖。';
+  } else {
+    const m = MAPS.find(mm => mm.id === id) ?? MAPS[0];
+    mapName.textContent = m.name;
+    mapDesc.textContent = m.desc;
+  }
+  mapGrid.querySelectorAll<HTMLButtonElement>('.map-btn').forEach(b => {
+    b.classList.toggle('selected', b.dataset.map === id);
+  });
 }
 
 function toggleLoadout(type: TowerType): void {
@@ -730,7 +769,7 @@ function currentLoadout(): TowerType[] {
 createBtn.addEventListener('click', () => {
   playSfx('click');
   lobbyError.textContent = '';
-  ws.send({ type: 'CREATE_ROOM', loadout: currentLoadout() });
+  ws.send({ type: 'CREATE_ROOM', loadout: currentLoadout(), mapId: selectedMapId });
 });
 
 let botDifficulty: Difficulty = 'normal';
@@ -745,7 +784,7 @@ document.querySelectorAll<HTMLButtonElement>('.diff-btn').forEach(btn => {
 soloBtn.addEventListener('click', () => {
   playSfx('click');
   lobbyError.textContent = '';
-  ws.send({ type: 'CREATE_SOLO', loadout: currentLoadout(), difficulty: botDifficulty });
+  ws.send({ type: 'CREATE_SOLO', loadout: currentLoadout(), difficulty: botDifficulty, mapId: selectedMapId });
 });
 
 joinBtn.addEventListener('click', () => {
@@ -827,6 +866,7 @@ window.addEventListener('keydown', resumeAudio, { once: true });
 // ── Init ──────────────────────────────────────────────────────────────────────
 showScreen('lobby');
 buildLoadoutPicker();
+buildMapPicker();
 refreshLobby();
 ws.connect();
 requestAnimationFrame(loop);
